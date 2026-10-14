@@ -1070,7 +1070,8 @@ function dueOn(date){return Object.values(S.srs).filter(r=>!r.mastered&&r.due<=d
 
 /* ================= views ================= */
 function renderToday(){
-  buildDay();const d=S.day,items=dayItems(),m=wordMap();
+  buildDay();if(!S.day.done&&!dayItems().length)buildDay(true); // 今天的计划是空的（比如之前词库学完了），导入新词后自动重新安排
+  const d=S.day,items=dayItems(),m=wordMap();
   const noEx=items.filter(i=>!hasEx(i));
   if(d.done){
     const missed=Object.keys(d.missed);
@@ -1129,7 +1130,7 @@ async function runPractice(k){
     <div class="row center"><button class="btn sun" id="again">再玩一次</button><button class="btn go" data-go="pet">去喂${esc(S.pet.name)}</button></div></div>`;
   $('#again').onclick=()=>runPractice(k);
 }
-function switchDeck(id,after){S.active=id;if(S.day&&!S.day.started&&!S.day.done)buildDay(true);save();hud();after()}
+function switchDeck(id,after){S.active=id;if(S.day&&!S.day.done&&(!S.day.started||!dayItems().length))buildDay(true);save();hud();after()}
 
 /* ---------- pet ---------- */
 const SPECIES=[
@@ -1706,7 +1707,7 @@ function renderDecks(){
     if(dup.length)openDeck=DUP;
     switchDeck(S.active,renderDecks);toast((fresh.length?`导入了 ${fresh.length} 个单词，已切换到新词库`:'没有新单词')+(dup.length?`；${dup.length} 个已掌握的词放进了「${DUP_NAME}」等你确认`:''))};
   $('#addBtn').onclick=()=>{const r=parseText($('#impText').value);if(!r.words.length)return toast('没有识别到单词，每行要有英文和中文哦');
-    const {fresh,dup}=splitMastered(r.words);const n=addWords(deck(),fresh);save();toast(`新增 ${n} 个单词（重复的已跳过）`+(dup.length?`；${dup.length} 个已掌握的词放进了「${DUP_NAME}」等你确认`:''));if(dup.length)openDeck=DUP;renderDecks()};
+    const {fresh,dup}=splitMastered(r.words);const n=addWords(deck(),fresh);if(S.day&&!S.day.done&&!dayItems().length)buildDay(true);save();toast(`新增 ${n} 个单词（重复的已跳过）`+(dup.length?`；${dup.length} 个已掌握的词放进了「${DUP_NAME}」等你确认`:''));if(dup.length)openDeck=DUP;renderDecks()};
   $('#npd').onchange=e=>{S.newPerDay=+e.target.value;if(S.day&&!S.day.started&&!S.day.done)buildDay(true);save();toast('明天起每天学 '+S.newPerDay+' 个新词')};
   bindAISettings();
   const dInfo=()=>{const n=parseDialog($('#dlgText').value).length;$('#dlgInfo').textContent=n?`识别到 ${n} 个问句`:''};
