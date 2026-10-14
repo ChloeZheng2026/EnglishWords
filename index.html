@@ -1281,7 +1281,7 @@ function advance(){
 function finishTalk(){
   talk.done=true;S.chatOk=(S.chatOk||0)+1;
   const td=today();if(S.chatDay!==td){S.chatDay=td;S.chatN=0}
-  talk.got=0;if(S.chatN<6){talk.got=2;S.chatN+=2;S.food+=2;S.stars+=2}
+  talk.got=0;if(S.chatN<10){talk.got=2;S.chatN+=2;S.food+=2;S.stars+=2}
   save();hud();beep('win');setBubble('That was fun!  聊得真开心！');checkBadges();drawTalk();
 }
 function startFree(){
@@ -1317,7 +1317,7 @@ function logHTML(){
 function talkHTML(){
   if(stage()===0)return `<p class="sub center" style="margin:0">${esc(S.pet.name)}还在蛋里，孵出来才能聊天哦。</p>`;
   const freeBtn=aiReady()?'<button class="btn" id="freeGo">✨ 自由聊天</button>':'';
-  if(!talk)return `<p class="sub center" style="margin:0 0 10px">${esc(S.pet.name)}先说一句，你用英语说出你的回答。完成一段对话得 2 个苹果（每天最多 6 个）。</p>
+  if(!talk)return `<p class="sub center" style="margin:0 0 10px">${esc(S.pet.name)}先说一句，你用英语说出你的回答。完成一段对话得 2 个苹果（每天最多 10 个），赚到的苹果可以喂豆豆、摸头、玩游戏。</p>
     <div class="row center"><button class="btn go" id="talkGo">💬 开始对话</button>${freeBtn}</div>`;
   const top=`<div class="row" style="justify-content:space-between;margin-bottom:8px"><span class="tag2">${talk.mode==='free'?'自由聊天':'话题：'+talk.d.t}</span></div>`;
   if(talk.mode==='free')return top+logHTML()+`
@@ -1376,7 +1376,7 @@ function badgeHTML(){
 }
 function renderPet(){
   decay();const p=S.pet,li=lvlInfo(p.xp),l=li.lvl,into=li.into;if(!bubbleText)bubbleText=petLine();const joy=Math.round(p.joy??60);
-  const td=today(),gLeft=S.gameDay===td?3-(S.gameN||0):3;
+  const GC=GAME_COST;
   const hc=p.hunger>60?'var(--leaf)':p.hunger>25?'var(--sun)':'var(--coral)';
   const canGrad=l>=GRAD_LV;
   $('#view').innerHTML=`<div class="stack">
@@ -1388,8 +1388,9 @@ function renderPet(){
      <div><div class="mlabel">心情<span>${joy}%</span></div><div class="meter"><i id="joyBar" style="width:${joy}%;background:var(--coral)"></i></div></div>
      <div><div class="mlabel">饱腹度<span>${Math.round(p.hunger)}%</span></div><div class="meter"><i style="width:${p.hunger}%;background:${hc}"></i></div></div>
      <div class="row center"><button class="btn sun" id="feed">🍎 喂苹果（剩 ${S.food} 个）</button><button class="btn" id="patBtn">✋ 摸摸头</button></div>
-     <div class="row center"><button class="btn go" id="gameBtn" ${stage()===0||gLeft<=0?'disabled':''}>🎮 陪${esc(p.name)}玩接苹果（今天还能玩 ${Math.max(0,gLeft)} 次）</button></div>
-     <p class="hint center" style="margin:0">点小屋里的${esc(p.name)}，每天会有一个小惊喜</p>
+     <div class="row center"><button class="btn go" id="gameBtn" ${stage()===0?'disabled':''}>🎮 陪${esc(p.name)}玩接苹果（${GC} 🍎）</button></div>
+     <p class="hint center" style="margin:0">摸头 1 🍎 · 玩游戏 ${GC} 🍎（会消耗饱腹度）· 苹果靠完成今日任务、和${esc(p.name)}聊天来赚</p>
+     <p class="hint center" style="margin:0">点小屋里的${esc(p.name)}，每天会有一个小惊喜；商店买礼物会让它心情变好</p>
      ${canGrad?`<div class="help center">${esc(p.name)}已经长成大王啦！毕业后它会住进图鉴，你会得到一颗新蛋，孵出新的豆豆伙伴。买过的衣服和家具都会保留。
        <div class="row center" style="margin-top:8px"><button class="btn ${gradArmed?'coral':'go'}" id="gradBtn">${gradArmed?'确定毕业':'🎓 让'+esc(p.name)+'毕业'}</button></div></div>`:''}
    </div>
@@ -1426,7 +1427,8 @@ function petFx(ch,n,cls){const box=$('.petstage');if(!box)return;
     s.style.left=(40+Math.random()*20)+'%';s.style.top=(cls==='drop'?18:42+Math.random()*10)+'%';s.style.animationDelay=(i*0.12)+'s';box.appendChild(s);setTimeout(()=>s.remove(),1800)}}
 function patPet(){
   const p=S.pet;if(stage()===0){anim('wiggle');beep('pop');return setBubble('（蛋开心地晃了晃）')}
-  p.joy=Math.min(100,(p.joy??60)+8);const td=today();if(S.patDay!==td){S.patDay=td;S.patN=0}
+  if(S.food<1){beep('bad');return setBubble('摸头要 1 个苹果哦，去和我聊天赚苹果吧！')}
+  S.food--;hud();p.joy=Math.min(100,(p.joy??60)+8);const td=today();if(S.patDay!==td){S.patDay=td;S.patN=0}
   let msg=['嘿嘿，好舒服～','再摸一下！','你是我最好的朋友！','咕噜咕噜～'][Math.random()*4|0];
   if(S.patN<10){S.patN++;const m=applyXp(2);if(m)msg=m}
   save();anim('wiggle');beep('pop');petFx('❤️',3);setBubble(msg);const j=$('#joyBar');if(j)j.style.width=p.joy+'%';
@@ -1443,11 +1445,14 @@ function tapPet(){
   setBubble(petNight()?'呼…呼…（豆豆在打瞌睡）':['跳一跳！','嘿！看我！','今天也要加油哦！','我想吃苹果～','去完成今日任务吧！'][Math.random()*5|0]);
 }
 /* 小游戏：接苹果，每天 3 次 */
+const GAME_COST=3;
 function playCatch(){
   const p=S.pet,name=esc(p.name);if(stage()===0)return toast('孵出来才能玩游戏哦');
   const td=today();if(S.gameDay!==td){S.gameDay=td;S.gameN=0}
-  if(S.gameN>=3)return toast('今天玩了 3 次啦，明天再来');
-  S.gameN++;save();
+  if(petNight())return setBubble('呼…呼…太晚了，明天再陪我玩吧');
+  if(S.food<GAME_COST){beep('bad');return setBubble(`玩一次要 ${GAME_COST} 个苹果，去和我聊天或者做今日任务赚苹果吧！`)}
+  if(p.hunger<20){beep('bad');return setBubble('我太饿了，跑不动…先喂我吃个苹果吧')}
+  S.food-=GAME_COST;save();hud();
   const ov=document.createElement('div');ov.className='gameov';
   ov.innerHTML=`<div class="gtop"><span>🍎 <b id="gScore">0</b></span><span>⏱ <b id="gTime">25</b> 秒</span><button class="btn small" id="gQuit">结束</button></div>
     <div class="garea" id="garea"><div class="gpet" id="gpet">${miniPet(p.sp,'')}</div></div>
@@ -1468,8 +1473,8 @@ function playCatch(){
         $('#gScore').textContent=score;it.el.remove();items.splice(items.indexOf(it),1)}
       else if(it.y>H){it.el.remove();items.splice(items.indexOf(it),1)}}
     requestAnimationFrame(frame)}
-  function end(){if(!run)return;run=false;const xp=Math.min(60,score*2);p.joy=Math.min(100,(p.joy??60)+25);const m=applyXp(xp);save();beep('win');
-    area.innerHTML=`<div class="gend"><div class="ptitle">接到 ${score} 分！</div><p>${name}获得 ${xp} 成长值，心情 +25</p>${m?`<p><b>${esc(m)}</b></p>`:''}<button class="btn go" id="gOk">好的</button></div>`;
+  function end(){if(!run)return;run=false;const xp=Math.min(60,score*2);p.joy=Math.min(100,(p.joy??60)+25);p.hunger=Math.max(0,p.hunger-15);const m=applyXp(xp);save();beep('win');
+    area.innerHTML=`<div class="gend"><div class="ptitle">接到 ${score} 分！</div><p>${name}获得 ${xp} 成长值，心情 +25，跑累了饱腹度 -15</p>${m?`<p><b>${esc(m)}</b></p>`:''}<button class="btn go" id="gOk">好的</button></div>`;
     $('#gOk').onclick=()=>{ov.remove();bubbleText=m||'好好玩！再陪我玩一次吧～';renderPet()}}
   $('#gQuit').onclick=end;requestAnimationFrame(frame);
 }
@@ -1482,8 +1487,8 @@ function graduate(){
 function petClick(e){
   const pt=e.target.closest('[data-ptab]');if(pt){petTab=pt.dataset.ptab;renderPet();return true}
   const b=e.target.closest('[data-buy]');if(b){const it=ITEMS.find(i=>i.id===b.dataset.buy);if(S.food<it.price)return true;
-    S.food-=it.price;S.owned.push(it.id);if(it.slot!=='room'&&stage()>0)S.equip[it.slot]=it.id;save();hud();beep('win');
-    bubbleText=it.slot==='room'?'哇，新家具！谢谢你！':'我穿上新'+it.name+'啦，好看吗？';renderPet();return true}
+    S.food-=it.price;S.owned.push(it.id);if(it.slot!=='room'&&stage()>0)S.equip[it.slot]=it.id;S.pet.joy=Math.min(100,(S.pet.joy??60)+15);save();hud();beep('win');
+    bubbleText=(it.slot==='room'?'哇，新家具！谢谢你！':'我穿上新'+it.name+'啦，好看吗？')+'（心情 +15）';renderPet();setTimeout(()=>petFx('💖',3),50);return true}
   const w=e.target.closest('[data-wear]');if(w){const it=ITEMS.find(i=>i.id===w.dataset.wear);S.equip[it.slot]=S.equip[it.slot]===it.id?null:it.id;save();beep('pop');renderPet();return true}
   const r=e.target.closest('[data-room]');if(r){const id=r.dataset.room;S.roomOff=S.roomOff.includes(id)?S.roomOff.filter(x=>x!==id):S.roomOff.concat(id);save();beep('pop');renderPet();return true}
   return false;
