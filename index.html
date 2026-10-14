@@ -286,6 +286,30 @@ rt{ruby-align:center}
 .mic.hold{border-radius:999px;padding:22px 16px;font-size:21px;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:none}
 .mic.hold.on{transform:scale(.97)}
 .bkmsg{font-size:15px;font-weight:700;color:var(--leaf);min-height:1em}.bkmsg.bad{color:var(--coral)}
+.sline{display:flex;align-items:center;justify-content:center;gap:8px;font-weight:700;margin-bottom:10px}.sdots{display:inline-flex;gap:5px}.sdots i{width:14px;height:14px;border-radius:50%;border:2px solid var(--leaf)}.sdots i.on{background:var(--leaf)}
+.eyes{animation:blink 4.6s infinite;transform-box:fill-box;transform-origin:center}
+@keyframes blink{0%,93%,100%{transform:scaleY(1)}96%{transform:scaleY(.1)}}
+.wander{animation:wander 16s ease-in-out infinite}
+@keyframes wander{0%,100%{transform:translateX(0)}25%{transform:translateX(-46px)}60%{transform:translateX(40px)}}
+.jump{animation:jump .6s ease}
+@keyframes jump{30%{transform:translateY(-30px) scaleY(1.05)}65%{transform:translateY(0) scale(1.06,.9)}}
+.zzz text{font-family:var(--f-display);font-weight:800;fill:var(--sky);font-size:18px;animation:zz 2.4s infinite}
+.zzz text:nth-child(2){animation-delay:.4s}.zzz text:nth-child(3){animation-delay:.8s;font-size:24px}
+@keyframes zz{0%{opacity:0;transform:translateY(8px)}40%{opacity:1}100%{opacity:0;transform:translateY(-10px)}}
+.petstage{position:relative}
+.pfx{position:absolute;font-size:26px;pointer-events:none;animation:pfx 1.5s ease-out forwards;z-index:3}
+@keyframes pfx{0%{opacity:0;transform:translateY(10px) scale(.6)}20%{opacity:1}100%{opacity:0;transform:translateY(-70px) scale(1.2)}}
+.pfx.drop{animation:pdrop .8s ease-in forwards}
+@keyframes pdrop{0%{opacity:1;transform:translateY(-40px)}100%{opacity:0;transform:translateY(60px) scale(.5)}}
+.gameov{position:fixed;inset:0;z-index:50;background:var(--sky-soft);display:flex;flex-direction:column;padding:calc(12px + env(safe-area-inset-top,0px)) 16px calc(12px + env(safe-area-inset-bottom,0px))}
+.gtop{display:flex;justify-content:space-between;align-items:center;font-size:20px;font-weight:800;margin-bottom:8px}
+.garea{position:relative;flex:1;border-radius:22px;background:linear-gradient(var(--sky-soft),var(--leaf-soft));border:2px solid var(--line);overflow:hidden;touch-action:none}
+.gpet{position:absolute;bottom:6px;left:0;width:84px;transition:transform .05s linear}
+.gpet .minipet{width:84px}
+.gpet.ouch{filter:hue-rotate(-40deg) brightness(1.1)}
+.gitem{position:absolute;top:0;left:0;font-size:32px;will-change:transform}
+.gend{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;background:var(--surface);padding:16px}
+.ghint{text-align:center;color:var(--muted);margin:8px 0 0}
 </style>
 
 <header class="top"><div class="wrap">
@@ -334,7 +358,7 @@ const STEPS=[
  {key:'vzhen',ico:'🔍',name:'看中文选英文',desc:'看中文，选出正确的英文单词。'},
  {key:'enzh',ico:'👂',name:'听英文选中文',desc:'听英文读音，选出正确的中文意思。'},
  {key:'zhen',ico:'🗣️',name:'听中文选英文',desc:'听中文，选出正确的英文单词。'},
- {key:'spell',ico:'✏️',name:'听音拼写',desc:'听读音，用字母把单词拼出来。'},
+ {key:'spell',ico:'✏️',name:'听音拼写',desc:'听读音，用字母把单词拼出来。拼错的词要连续拼对 5 次才过关。'},
  {key:'fill',ico:'🧱',name:'句子补全',desc:'看句子，选一个单词填进空格。接好 AI 后，句子每天都是新编的。',ex:true},
  {key:'read',ico:'📢',name:'跟读三遍',desc:'每个句子先听，再大声跟读，一共读 3 遍。',ex:true},
  {key:'build',ico:'🔤',name:'看中文拼句子',desc:'看中文，把打乱的英文单词排成句子。',ex:true},
@@ -514,38 +538,59 @@ function choiceRound(ctx,list,label,mode){return new Promise(res=>{
 })}
 
 /* --- 听音拼写 --- */
-function spellRound(ctx,list,label){return new Promise(res=>{
-  const ui=roundUI(ctx,label),wrong=new Set(),qs=shuffle(list);let i=0;
-  function q(){
-    if(!alive(ctx))return;if(i>=qs.length){keyH=null;return res(wrong)}ui.prog(i/qs.length);
-    const it=qs[i],chars=[...it.en.toLowerCase()],need=chars.filter(c=>c!==' ');
-    const alpha='abcdefghijklmnopqrstuvwxyz',extra=[];while(extra.length<Math.min(3,Math.max(2,Math.ceil(need.length/3))))extra.push(alpha[Math.random()*26|0]);
-    const tiles=shuffle(need.concat(extra));let filled=[],tries=0,busy=false;
-    ui.body.innerHTML=`<div class="card prompt"><button class="speaker" id="spk" aria-label="再听一遍">🔊</button>
-      <div class="hint">听读音，拼出这个单词 · ${need.length} 个字母</div><button class="linkbtn" id="zhh">看中文提示</button><div class="reveal" id="zhv" hidden style="font-family:var(--f-zh)">${esc(it.zh)}</div>
-      <div class="slots" id="slots" style="margin-top:14px"></div></div>
-      <div class="letters">${tiles.map((c,k)=>`<button class="letter" data-k="${k}">${esc(c)}</button>`).join('')}</div>
-      <div class="row center" style="margin-top:16px"><button class="btn" id="back">⌫ 退格</button></div>`;
-    const play=()=>say(it.en);setTimeout(play,150);$('#spk').onclick=play;
-    $('#zhh').onclick=()=>{$('#zhv').hidden=false;$('#zhh').hidden=true};
-    function draw(cls){let n=0;$('#slots').innerHTML=chars.map(c=>{if(c===' ')return '<span class="slot gap"></span>';const f=filled[n++];return `<span class="slot ${f?'filled':''} ${cls||''}">${f?esc(f.c):''}</span>`}).join('')}
-    draw();
-    const btns=[...ui.body.querySelectorAll('.letter')];
-    function put(b){if(busy||b.classList.contains('used')||filled.length>=need.length)return;b.classList.add('used');filled.push({c:tiles[+b.dataset.k],b});beep('pop');draw();if(filled.length===need.length)check()}
-    function undo(){if(busy)return;const f=filled.pop();if(f){f.b.classList.remove('used');draw()}}
-    btns.forEach(b=>b.onclick=()=>put(b));$('#back').onclick=undo;
-    keyH=e=>{if(!document.querySelector('.letters'))return;if(e.key==='Backspace'){e.preventDefault();undo();return}const k=e.key.toLowerCase();if(k.length!==1)return;const b=btns.find(x=>!x.classList.contains('used')&&tiles[+x.dataset.k]===k);if(b)put(b)};
-    function check(){
-      busy=true;
-      if(filled.map(f=>f.c).join('')===need.join('')){draw('right');beep('ok');say(it.en);if(tries===0)good(ctx,$('#slots'));i++;setTimeout(q,1100)}
-      else{tries++;wrong.add(it.id);beep('bad');$('#slots').classList.add('bad');
-        setTimeout(()=>{$('#slots').classList.remove('bad');
-          if(tries>=2){filled=need.map(c=>({c}));draw('reveal-ans');$('#zhv').hidden=false;say(it.en);toast('正确拼法：'+it.en);i++;setTimeout(q,2400)}
-          else{filled.forEach(f=>f.b.classList.remove('used'));filled=[];draw();busy=false;toast('不对哦，再听一遍，再拼一次');play()}},500)}
-    }
+/* 听音拼写一个词：返回是否第一次就拼对；错两次显示答案 */
+function spellOne(ctx,ui,it,extraHTML){return new Promise(res=>{
+  if(!alive(ctx))return;
+  const chars=[...it.en.toLowerCase()],need=chars.filter(c=>c!==' ');
+  const alpha='abcdefghijklmnopqrstuvwxyz',extra=[];while(extra.length<Math.min(3,Math.max(2,Math.ceil(need.length/3))))extra.push(alpha[Math.random()*26|0]);
+  const tiles=shuffle(need.concat(extra));let filled=[],tries=0,busy=false;
+  ui.body.innerHTML=`${extraHTML||''}<div class="card prompt"><button class="speaker" id="spk" aria-label="再听一遍">🔊</button>
+    <div class="hint">听读音，拼出这个单词 · ${need.length} 个字母</div><button class="linkbtn" id="zhh">看中文提示</button><div class="reveal" id="zhv" hidden style="font-family:var(--f-zh)">${esc(it.zh)}</div>
+    <div class="slots" id="slots" style="margin-top:14px"></div></div>
+    <div class="letters">${tiles.map((c,k)=>`<button class="letter" data-k="${k}">${esc(c)}</button>`).join('')}</div>
+    <div class="row center" style="margin-top:16px"><button class="btn" id="back">⌫ 退格</button></div>`;
+  const play=()=>say(it.en);setTimeout(play,150);$('#spk').onclick=play;
+  $('#zhh').onclick=()=>{$('#zhv').hidden=false;$('#zhh').hidden=true};
+  function draw(cls){let n=0;$('#slots').innerHTML=chars.map(c=>{if(c===' ')return '<span class="slot gap"></span>';const f=filled[n++];return `<span class="slot ${f?'filled':''} ${cls||''}">${f?esc(f.c):''}</span>`}).join('')}
+  draw();
+  const btns=[...ui.body.querySelectorAll('.letter')];
+  function put(b){if(busy||b.classList.contains('used')||filled.length>=need.length)return;b.classList.add('used');filled.push({c:tiles[+b.dataset.k],b});beep('pop');draw();if(filled.length===need.length)check()}
+  function undo(){if(busy)return;const f=filled.pop();if(f){f.b.classList.remove('used');draw()}}
+  btns.forEach(b=>b.onclick=()=>put(b));$('#back').onclick=undo;
+  keyH=e=>{if(!document.querySelector('.letters'))return;if(e.key==='Backspace'){e.preventDefault();undo();return}const k=e.key.toLowerCase();if(k.length!==1)return;const b=btns.find(x=>!x.classList.contains('used')&&tiles[+x.dataset.k]===k);if(b)put(b)};
+  function check(){
+    busy=true;
+    if(filled.map(f=>f.c).join('')===need.join('')){draw('right');beep('ok');say(it.en);if(tries===0)good(ctx,$('#slots'));setTimeout(()=>res(tries===0),1100)}
+    else{tries++;beep('bad');$('#slots').classList.add('bad');
+      setTimeout(()=>{$('#slots').classList.remove('bad');
+        if(tries>=2){filled=need.map(c=>({c}));draw('reveal-ans');$('#zhv').hidden=false;say(it.en);toast('正确拼法：'+it.en);setTimeout(()=>res(false),2400)}
+        else{filled.forEach(f=>f.b.classList.remove('used'));filled=[];draw();busy=false;toast('不对哦，再听一遍，再拼一次');play()}},500)}
   }
-  q();
 })}
+async function spellRound(ctx,list,label){
+  const ui=roundUI(ctx,label),wrong=new Set(),qs=shuffle(list);
+  for(let i=0;i<qs.length;i++){ui.prog(i/qs.length);const ok=await spellOne(ctx,ui,qs[i]);if(!alive(ctx))return wrong;if(!ok)wrong.add(qs[i].id)}
+  keyH=null;return wrong;
+}
+/* 听音拼写：先全部拼一轮；拼错的词轮流再拼，每个词要连续拼对 5 次才过关，中间拼错就重新数 */
+const SPELL_N=5;
+async function spellStep(ctx,list){
+  const wrong=await spellRound(ctx,list,`第 1 轮 · 全部 ${list.length} 个`);if(!alive(ctx))return;
+  wrong.forEach(id=>markMiss(ctx,id));if(!wrong.size)return;
+  const queue=list.filter(x=>wrong.has(x.id)),cnt={};queue.forEach(x=>cnt[x.id]=0);
+  await pause(ctx,`有 ${queue.length} 个词拼错了`,chips(wrong)+`<p>这些词每个都要<b>连续拼对 ${SPELL_N} 次</b>才过关，中间拼错就重新数。加油！</p>`,'开始强化');if(!alive(ctx))return;
+  let k=0;
+  while(queue.length){
+    const it=queue[k%queue.length];
+    const dots=n=>`<div class="sdots">${Array.from({length:SPELL_N},(_,j)=>`<i class="${j<n?'on':''}"></i>`).join('')}</div>`;
+    const ui=roundUI(ctx,`错词强化 · 还剩 ${queue.length} 个`);const total=queue.length*SPELL_N;ui.prog(1-queue.reduce((a,x)=>a+SPELL_N-cnt[x.id],0)/(Object.keys(cnt).length*SPELL_N));
+    const ok=await spellOne(ctx,ui,it,`<div class="sline">这个词已连续拼对 ${dots(cnt[it.id])}</div>`);if(!alive(ctx))return;
+    if(ok){cnt[it.id]++;if(cnt[it.id]>=SPELL_N){queue.splice(queue.indexOf(it),1);toast(`${it.en} 连续拼对 ${SPELL_N} 次，过关！`);beep('win');continue}}
+    else{if(cnt[it.id])toast(`拼错了，${it.en} 要重新数啦`);cnt[it.id]=0}
+    k++;
+  }
+  keyH=null;
+}
 
 /* --- 句子补全 --- */
 function splitBlank(it){const m=it.ex.match(blankRe(it));return {form:m[1],before:it.ex.slice(0,m.index),after:it.ex.slice(m.index+m[1].length)}}
@@ -907,6 +952,8 @@ async function ensureGen(ctx){
   $('#gbody').innerHTML=`<div class="card result stack"><div class="ptitle">${esc(S.pet.name)}正在编新句子…</div><p>今天的句子补全和完形填空，由 AI 用今天的单词现编，每天都不一样。一般十几秒就好。</p>
     <div class="row center"><button class="btn small" id="genSkip">不等了，用词库里的例句</button></div></div>`;
   const items=ctx.items;let skip;const skipP=new Promise(ok=>{skip=ok});$('#genSkip').onclick=()=>skip('skip');
+  const noEx=items.filter(i=>!hasEx(i));
+  if(noEx.length&&!d.exTried){d.exTried=true;save();try{await Promise.race([skipP,fillExamples(noEx)])}catch(e){}if(!alive(ctx))return}
   try{
     const r=await Promise.race([skipP.then(()=>{throw {code:'skipped'}}),aiJSON(`你在帮中国小学生（6-10 岁）复习英语单词。今天的单词：
 ${items.map(i=>`${i.en}（${i.zh}）`).join('\n')}
@@ -984,7 +1031,7 @@ function runStep(ctx,step){
   switch(step.key){
     case 'match':return masteryLoop(ctx,list,(l,lab)=>matchRound(ctx,l,lab));
     case 'venzh':case 'vzhen':case 'enzh':case 'zhen':return masteryLoop(ctx,list,(l,lab)=>choiceRound(ctx,l,lab,step.key));
-    case 'spell':return masteryLoop(ctx,list,(l,lab)=>spellRound(ctx,l,lab));
+    case 'spell':return spellStep(ctx,list);
     case 'fill':return masteryLoop(ctx,list,(l,lab)=>fillRound(ctx,l,lab));
     case 'read':return readPass(ctx,list);
     case 'build':return masteryLoop(ctx,list,(l,lab)=>buildRound(ctx,l,lab));
@@ -1016,7 +1063,7 @@ function finishDay(ctx){
   for(const id of d.newIds){S.srs[id]={st:0,due:addDays(t,INTERVALS[0]),learned:t,last:t,reviews:0}}
   if(S.streak.last!==t){S.streak.n=S.streak.last===addDays(t,-1)?S.streak.n+1:1;S.streak.last=t}
   S.history.push({date:t,n:d.newIds.length,r:d.revIds.length,miss:Object.keys(d.missed).length});
-  finishPats(t);d.done=true;d.mastered=newly;S.food+=5;save();hud();checkBadges();beep('win');bubbleText='今天的任务完成啦！喂我吃苹果吧～';
+  finishPats(t);{const m=applyXp(30);bubbleText=m||'今天的任务完成啦！我也长大了一点～喂我吃苹果吧！'}d.done=true;d.mastered=newly;S.food+=5;save();hud();checkBadges();beep('win');
   go('today');toast('任务完成！奖励 5 个苹果 🍎');
 }
 function dueOn(date){return Object.values(S.srs).filter(r=>!r.mastered&&r.due<=date).length}
@@ -1134,14 +1181,15 @@ const ROOM={
 function lightsSVG(){const cs=['#FF6450','#FFC52E','#4CBB72','#4AA8E8','#FF7FB0'];let s='<path d="M0 12 Q100 40 200 12 Q300 40 400 12" stroke="#7A8B8F" stroke-width="2" fill="none"/>';
   for(let x=20,k=0;x<400;x+=36,k++){const t=((x%200)-100)/100,y=12+14*(1-t*t);s+=`<circle cx="${x}" cy="${y+5}" r="5" fill="${cs[k%5]}"/>`}return s}
 
-function decay(){const p=S.pet,now=Date.now(),h=(now-p.t)/36e5;p.hunger=Math.max(0,p.hunger-h*4);p.t=now;save()}
-const lvlOf=xp=>Math.floor(xp/50)+1;
+function decay(){const p=S.pet,now=Date.now(),h=(now-p.t)/36e5;p.hunger=Math.max(0,p.hunger-h*4);p.joy=Math.max(0,(p.joy??60)-h*3);p.t=now;save()}
+function lvlInfo(xp){let L=1,need=40;while(xp>=need&&L<GRAD_LV){xp-=need;L++;need=40+20*(L-1)}return {lvl:L,into:xp,need}}
+const lvlOf=xp=>lvlInfo(xp).lvl;
 const level=()=>lvlOf(S.pet.xp);
 const stageOf=l=>l<2?0:l<4?1:l<7?2:3;
 const stage=()=>stageOf(level());
 const STAGE_NAME=['神秘蛋','宝宝','少年','大王'];
-const GRAD_LV=8;
-function mood(){const h=S.pet.hunger;return h>60?'happy':h>25?'ok':'sad'}
+const GRAD_LV=10;
+function mood(){const h=S.pet.hunger,j=S.pet.joy??60;if(petNight())return 'sleep';return h<25||j<20?'sad':h>60&&j>50?'happy':'ok'}
 function petInner(o){ // 宠物画在 0..200 坐标里
   const sp=spOf(o.sp),st=o.st,m=o.mood||'happy',eq=o.eq||{};
   if(st===0){
@@ -1150,30 +1198,30 @@ function petInner(o){ // 宠物画在 0..200 坐标里
       ${[[78,80,10],[122,132,13],[128,78,6],[76,146,7]].map(([x,y,r])=>`<circle cx="${x}" cy="${y}" r="${r}" fill="${sp.body}" opacity=".75"/>`).join('')}${crack}</g>`;
   }
   const sc=[0,.74,.9,1.04][st],bs=`fill:${sp.body}${sp.stroke?';stroke:'+sp.stroke+';stroke-width:3':''}`;
-  const mouth=m==='happy'?'M86 118 Q100 132 114 118':m==='ok'?'M88 122 L112 122':'M88 126 Q100 116 112 126';
+  const mouth=m==='happy'?'M86 118 Q100 132 114 118':m==='ok'?'M88 122 L112 122':m==='sleep'?'M96 122 Q100 126 104 122':'M88 126 Q100 116 112 126';
   const ears=st>=2?`<path style="${bs}" d="M58 70 Q48 30 80 52 Z"/><path style="${bs}" d="M142 70 Q152 30 120 52 Z"/>`:'';
-  const head=eq.hat&&WEAR[eq.hat]?WEAR[eq.hat]:(o.lvl>=GRAD_LV?`<path class="p-crown" d="M74 46 L80 22 L92 38 L100 16 L108 38 L120 22 L126 46 Z"/>`:ORN[sp.id]);
+  const head=eq.hat&&WEAR[eq.hat]?WEAR[eq.hat]:(o.lvl>=GRAD_LV-1?`<path class="p-crown" d="M74 46 L80 22 L92 38 L100 16 L108 38 L120 22 L126 46 Z"/>`:ORN[sp.id]);
   const scarf=st>=3&&eq.back!=='bag'?`<path class="p-scarf" d="M56 140 Q100 158 144 140 L144 150 Q100 168 56 150 Z"/>`:'';
-  const eyes=m==='sad'?`<path class="p-mouth" d="M70 96 q8 -6 16 0"/><path class="p-mouth" d="M114 96 q8 -6 16 0"/>`:
-    `<circle class="p-eye" cx="78" cy="96" r="9"/><circle class="p-eye" cx="122" cy="96" r="9"/><circle class="p-shine" cx="81" cy="92" r="3"/><circle class="p-shine" cx="125" cy="92" r="3"/>`;
+  const eyes=m==='sad'?`<path class="p-mouth" d="M70 96 q8 -6 16 0"/><path class="p-mouth" d="M114 96 q8 -6 16 0"/>`:m==='sleep'?`<path class="p-mouth" d="M70 94 q8 6 16 0"/><path class="p-mouth" d="M114 94 q8 6 16 0"/>`:
+    `<g class="eyes"><circle class="p-eye" cx="78" cy="96" r="9"/><circle class="p-eye" cx="122" cy="96" r="9"/><circle class="p-shine" cx="81" cy="92" r="3"/><circle class="p-shine" cx="125" cy="92" r="3"/></g>`;
   const back=eq.back==='cape'||eq.back==='rainbow'?WEAR[eq.back]:'';
   return `<ellipse class="p-shadow" cx="100" cy="186" rx="${56*sc}" ry="8"/>
     <g class="bob" ${o.id?'id="petG"':''}><g transform="translate(100 182) scale(${sc}) translate(-100 -182)">
     ${back}${ears}<ellipse style="${bs}" cx="100" cy="112" rx="64" ry="66"/><ellipse style="fill:${sp.belly}" cx="100" cy="134" rx="38" ry="34"/>
     <ellipse style="${bs}" cx="70" cy="178" rx="16" ry="8"/><ellipse style="${bs}" cx="130" cy="178" rx="16" ry="8"/>
     ${eyes}<circle class="p-cheek" cx="64" cy="114" r="9"/><circle class="p-cheek" cx="136" cy="114" r="9"/>
-    <path class="p-mouth" d="${mouth}"/>${scarf}${eq.face?WEAR[eq.face]:''}${eq.back==='bag'?WEAR.bag:''}${head}</g></g>`;
+    <path class="p-mouth" d="${mouth}"/>${scarf}${eq.face?WEAR[eq.face]:''}${eq.back==='bag'?WEAR.bag:''}${head}</g>${m==='sleep'?'<g class="zzz"><text x="150" y="60">z</text><text x="166" y="40">z</text><text x="182" y="20">Z</text></g>':''}</g>`;
 }
 function sceneSVG(){
   const on=id=>S.owned.includes(id)&&!S.roomOff.includes(id);
   const room=['window','lights','shelf','plant','bed','trophy'].filter(on).map(id=>id==='lights'?lightsSVG():ROOM[id]).join('');
   return `<svg class="scene" viewBox="0 0 400 250" role="img" aria-label="${esc(S.pet.name)}的小屋">
     <rect class="r-wall" x="0" y="0" width="400" height="186"/><rect class="r-floor" x="0" y="186" width="400" height="64"/><path class="r-line" d="M0 186 H400"/>
-    ${room}${on('rug')?ROOM.rug:''}<g transform="translate(110 22) scale(.92)">${petInner({sp:S.pet.sp,st:stage(),mood:mood(),lvl:level(),xp:S.pet.xp,eq:S.equip,id:1})}</g></svg>`;
+    ${room}${on('rug')?ROOM.rug:''}<g transform="translate(110 22) scale(.92)"><g class="${stage()>0&&mood()!=='sleep'?'wander':''}" id="petHit" style="cursor:pointer">${petInner({sp:S.pet.sp,st:stage(),mood:mood(),lvl:level(),xp:S.pet.xp,eq:S.equip,id:1})}</g></g></svg>`;
 }
 function miniPet(sp,cls=''){return `<svg viewBox="-10 -20 220 216" class="minipet ${cls}" aria-hidden="true">${petInner({sp,st:3,mood:'happy',lvl:1,eq:{}})}</svg>`}
 
-const LINES={happy:['今天也要一起学单词哦！','我最喜欢你啦～','吃饱饱，学习棒棒！','完成今日任务，我就能长大！','和我聊聊天吧！'],
+const LINES={sleep:['呼…呼…（睡着了）','（梦里在吃苹果）','嘘…豆豆在睡觉'],happy:['今天也要一起学单词哦！','我最喜欢你啦～','吃饱饱，学习棒棒！','完成今日任务，我就能长大！','和我聊聊天吧！'],
   ok:['肚子有点饿了…','去做今日任务赚点苹果吧？','一起来背单词吧！'],
   sad:['好饿呀…想吃苹果','咕噜咕噜…肚子在叫','答对题目就有苹果啦'],
   egg:['（蛋在轻轻摇晃）','（里面好像有动静…）','喂我苹果，我就快破壳啦！']};
@@ -1327,7 +1375,8 @@ function badgeHTML(){
     <span class="hint" style="margin:0">${b.desc}</span><span class="tag2 ${got?'m':''}">${got?got.slice(5).replace('-','/')+' 获得':'奖励 🍎 '+b.reward}</span></div>`}).join('')}</div>`;
 }
 function renderPet(){
-  decay();const p=S.pet,l=level(),into=p.xp%50;if(!bubbleText)bubbleText=petLine();
+  decay();const p=S.pet,li=lvlInfo(p.xp),l=li.lvl,into=li.into;if(!bubbleText)bubbleText=petLine();const joy=Math.round(p.joy??60);
+  const td=today(),gLeft=S.gameDay===td?3-(S.gameN||0):3;
   const hc=p.hunger>60?'var(--leaf)':p.hunger>25?'var(--sun)':'var(--coral)';
   const canGrad=l>=GRAD_LV;
   $('#view').innerHTML=`<div class="stack">
@@ -1335,9 +1384,12 @@ function renderPet(){
      <div class="row center" style="gap:8px;margin-top:4px"><input class="petname" id="petName" value="${esc(p.name)}" maxlength="8" aria-label="宠物名字">
      <span class="chip">Lv.${l} · ${stage()===0?'神秘蛋':spOf(p.sp).name+STAGE_NAME[stage()]}</span></div></div>
    <div class="card stack" style="gap:12px">
-     <div><div class="mlabel">成长值<span>${canGrad?'可以毕业啦！':`${into} / 50 · Lv.${GRAD_LV} 毕业`}</span></div><div class="meter"><i style="width:${canGrad?100:into*2}%;background:var(--sky)"></i></div></div>
+     <div><div class="mlabel">成长值<span>${canGrad?'可以毕业啦！':`${into} / ${li.need} · Lv.${GRAD_LV} 毕业`}</span></div><div class="meter"><i style="width:${canGrad?100:Math.round(into/li.need*100)}%;background:var(--sky)"></i></div></div>
+     <div><div class="mlabel">心情<span>${joy}%</span></div><div class="meter"><i id="joyBar" style="width:${joy}%;background:var(--coral)"></i></div></div>
      <div><div class="mlabel">饱腹度<span>${Math.round(p.hunger)}%</span></div><div class="meter"><i style="width:${p.hunger}%;background:${hc}"></i></div></div>
      <div class="row center"><button class="btn sun" id="feed">🍎 喂苹果（剩 ${S.food} 个）</button><button class="btn" id="patBtn">✋ 摸摸头</button></div>
+     <div class="row center"><button class="btn go" id="gameBtn" ${stage()===0||gLeft<=0?'disabled':''}>🎮 陪${esc(p.name)}玩接苹果（今天还能玩 ${Math.max(0,gLeft)} 次）</button></div>
+     <p class="hint center" style="margin:0">点小屋里的${esc(p.name)}，每天会有一个小惊喜</p>
      ${canGrad?`<div class="help center">${esc(p.name)}已经长成大王啦！毕业后它会住进图鉴，你会得到一颗新蛋，孵出新的豆豆伙伴。买过的衣服和家具都会保留。
        <div class="row center" style="margin-top:8px"><button class="btn ${gradArmed?'coral':'go'}" id="gradBtn">${gradArmed?'确定毕业':'🎓 让'+esc(p.name)+'毕业'}</button></div></div>`:''}
    </div>
@@ -1348,7 +1400,7 @@ function renderPet(){
    </div></div>`;
   $('#petName').onchange=e=>{p.name=e.target.value.trim()||spOf(p.sp).name;save()};
   $('#feed').onclick=feed;
-  $('#patBtn').onclick=()=>{anim('wiggle');beep('pop');setBubble(stage()===0?'（蛋开心地晃了晃）':['嘿嘿，好舒服～','再摸一下！','你是我最好的朋友！'][Math.random()*3|0])};
+  $('#patBtn').onclick=patPet;$('#gameBtn').onclick=playCatch;const ph=$('#petHit');if(ph)ph.addEventListener('click',tapPet);
   const gb=$('#gradBtn');if(gb)gb.onclick=()=>{if(!gradArmed){gradArmed=true;return renderPet()}graduate()};
   bindTalk();
 }
@@ -1357,17 +1409,74 @@ function anim(c){const g=$('#petG');if(!g)return;g.classList.remove('bob');g.cla
 function feed(){
   const p=S.pet;talk=null;
   if(S.food<=0){setBubble('苹果吃完啦，去做今日任务就能赚苹果！');beep('bad');return}
-  if(p.hunger>=100){setBubble('吃不下啦，我们去学单词吧！');return}
-  const before=level(),bst=stage();S.food--;p.hunger=Math.min(100,p.hunger+20);p.xp+=15;
-  let msg=['啊呜～好吃！','嚼嚼嚼…谢谢你！','苹果甜甜的！'][Math.random()*3|0];
-  if(stage()!==bst){if(bst===0){if(p.name==='小蛋')p.name=spOf(p.sp).name;msg=`咔嚓！我破壳啦！我是${spOf(p.sp).name}，你好呀！`}else msg='哇！我变成'+spOf(p.sp).name+STAGE_NAME[stage()]+'啦！'}
-  else if(level()>before)msg=level()>=GRAD_LV?'我长成大王啦！可以毕业了！':'我升级啦！Lv.'+level();
-  save();beep('ok');bubbleText=msg;renderPet();hud();anim('chomp');if(level()>before)beep('win');
+  if(petNight()&&stage()>0){setBubble('呼…呼…（在睡觉呢，明天再喂吧）');return}
+  if(p.hunger>=100){setBubble('吃不下啦，陪我玩一会儿吧！');return}
+  const before=level();S.food--;p.hunger=Math.min(100,p.hunger+20);p.joy=Math.min(100,(p.joy??60)+3);
+  const m=applyXp(15);const msg=m||['啊呜～好吃！','嚼嚼嚼…谢谢你！','苹果甜甜的！','还想再吃一个～'][Math.random()*4|0];
+  save();beep('ok');bubbleText=msg;renderPet();hud();petFx('🍎',1,'drop');setTimeout(()=>anim('chomp'),500);if(level()>before){beep('win');petFx('✨',4)}
+}
+/* --- 宠物：成长、心情、互动、小游戏 --- */
+function petNight(){const h=new Date().getHours();return h>=22||h<6}
+function applyXp(n){const p=S.pet,b=level(),bst=stage();p.xp+=n;
+  if(stage()!==bst){if(bst===0){if(p.name==='小蛋')p.name=spOf(p.sp).name;return `咔嚓！我破壳啦！我是${spOf(p.sp).name}，你好呀！`}return '哇！我变成'+spOf(p.sp).name+STAGE_NAME[stage()]+'啦！'}
+  if(level()>b)return level()>=GRAD_LV?'我长成大王啦！可以毕业了！':'我升级啦！Lv.'+level();
+  return ''}
+function petFx(ch,n,cls){const box=$('.petstage');if(!box)return;
+  for(let i=0;i<n;i++){const s=document.createElement('span');s.className='pfx '+(cls||'');s.textContent=ch;
+    s.style.left=(40+Math.random()*20)+'%';s.style.top=(cls==='drop'?18:42+Math.random()*10)+'%';s.style.animationDelay=(i*0.12)+'s';box.appendChild(s);setTimeout(()=>s.remove(),1800)}}
+function patPet(){
+  const p=S.pet;if(stage()===0){anim('wiggle');beep('pop');return setBubble('（蛋开心地晃了晃）')}
+  p.joy=Math.min(100,(p.joy??60)+8);const td=today();if(S.patDay!==td){S.patDay=td;S.patN=0}
+  let msg=['嘿嘿，好舒服～','再摸一下！','你是我最好的朋友！','咕噜咕噜～'][Math.random()*4|0];
+  if(S.patN<10){S.patN++;const m=applyXp(2);if(m)msg=m}
+  save();anim('wiggle');beep('pop');petFx('❤️',3);setBubble(msg);const j=$('#joyBar');if(j)j.style.width=p.joy+'%';
+}
+function tapPet(){
+  if(stage()===0){anim('wiggle');return setBubble(petLine())}
+  anim('jump');beep('pop');
+  const td=today();
+  if(S.giftDay!==td&&!petNight()){S.giftDay=td;
+    const can=ITEMS.filter(i=>!i.badge&&!S.owned.includes(i.id));
+    if(can.length&&Math.random()<.35){const it=can[Math.random()*can.length|0];S.owned.push(it.id);save();petFx('🎁',2);
+      setBubble(`我在角落里找到了「${it.name}」，送给你！`);toast(`${S.pet.name}送你：${it.ic} ${it.name}`);return setTimeout(renderPet,1600)}
+    const n=3+(Math.random()*4|0);S.food+=n;save();hud();petFx('🍎',3);setBubble(`我捡到了 ${n} 个苹果，送给你！`);return}
+  setBubble(petNight()?'呼…呼…（豆豆在打瞌睡）':['跳一跳！','嘿！看我！','今天也要加油哦！','我想吃苹果～','去完成今日任务吧！'][Math.random()*5|0]);
+}
+/* 小游戏：接苹果，每天 3 次 */
+function playCatch(){
+  const p=S.pet,name=esc(p.name);if(stage()===0)return toast('孵出来才能玩游戏哦');
+  const td=today();if(S.gameDay!==td){S.gameDay=td;S.gameN=0}
+  if(S.gameN>=3)return toast('今天玩了 3 次啦，明天再来');
+  S.gameN++;save();
+  const ov=document.createElement('div');ov.className='gameov';
+  ov.innerHTML=`<div class="gtop"><span>🍎 <b id="gScore">0</b></span><span>⏱ <b id="gTime">25</b> 秒</span><button class="btn small" id="gQuit">结束</button></div>
+    <div class="garea" id="garea"><div class="gpet" id="gpet">${miniPet(p.sp,'')}</div></div>
+    <p class="ghint">手指左右拖，让${name}接住 🍎（⭐ 加 3 分），躲开 🐛</p>`;
+  document.body.appendChild(ov);
+  const area=$('#garea'),pet=$('#gpet');let W=area.clientWidth,H=area.clientHeight,px=W/2,score=0,t0=performance.now(),items=[],last=0,run=true,lt=0;
+  const move=x=>{px=Math.max(32,Math.min(W-32,x))};
+  const at=e=>{const r=area.getBoundingClientRect();move(e.clientX-r.left)};
+  area.addEventListener('pointerdown',at);area.addEventListener('pointermove',at);
+  function spawn(){const r=Math.random(),k=r<.2?'🐛':r<.3?'⭐':'🍎';const el=document.createElement('div');el.className='gitem';el.textContent=k;area.appendChild(el);
+    items.push({el,x:20+Math.random()*(W-40),y:-36,v:140+Math.random()*90+(performance.now()-t0)/120,k})}
+  function frame(now){if(!run)return;const dt=Math.min(.05,(now-(lt||now))/1000);lt=now;
+    const left=25-(now-t0)/1000;$('#gTime').textContent=Math.max(0,Math.ceil(left));if(left<=0)return end();
+    if(now-last>Math.max(320,620-(now-t0)/60)){spawn();last=now}
+    pet.style.transform=`translateX(${px-42}px)`;
+    for(const it of items.slice()){it.y+=it.v*dt;it.el.style.transform=`translate(${it.x-16}px,${it.y}px)`;
+      if(it.y>H-95&&it.y<H-25&&Math.abs(it.x-px)<46){if(it.k==='🐛'){score=Math.max(0,score-2);beep('bad');pet.classList.add('ouch');setTimeout(()=>pet.classList.remove('ouch'),300)}else{score+=it.k==='⭐'?3:1;beep('pop')}
+        $('#gScore').textContent=score;it.el.remove();items.splice(items.indexOf(it),1)}
+      else if(it.y>H){it.el.remove();items.splice(items.indexOf(it),1)}}
+    requestAnimationFrame(frame)}
+  function end(){if(!run)return;run=false;const xp=Math.min(60,score*2);p.joy=Math.min(100,(p.joy??60)+25);const m=applyXp(xp);save();beep('win');
+    area.innerHTML=`<div class="gend"><div class="ptitle">接到 ${score} 分！</div><p>${name}获得 ${xp} 成长值，心情 +25</p>${m?`<p><b>${esc(m)}</b></p>`:''}<button class="btn go" id="gOk">好的</button></div>`;
+    $('#gOk').onclick=()=>{ov.remove();bubbleText=m||'好好玩！再陪我玩一次吧～';renderPet()}}
+  $('#gQuit').onclick=end;requestAnimationFrame(frame);
 }
 function graduate(){
   const p=S.pet;S.dex.push({sp:p.sp,name:p.name,date:today()});
   const next=SPECIES.find(s=>!S.dex.some(d=>d.sp===s.id))||SPECIES[Math.random()*SPECIES.length|0];
-  S.pet={name:'小蛋',xp:0,hunger:60,t:Date.now(),sp:next.id};gradArmed=false;talk=null;petTab='dex';
+  S.pet={name:'小蛋',xp:0,hunger:60,joy:60,t:Date.now(),sp:next.id};gradArmed=false;talk=null;petTab='dex';
   bubbleText='（新的蛋来啦！会孵出什么呢？）';save();beep('win');checkBadges();renderPet();toast(p.name+' 毕业啦，住进了图鉴！');
 }
 function petClick(e){
@@ -1461,21 +1570,23 @@ function bindAISettings(){
   const off=$('#aiOffBtn');if(off)off.onclick=()=>{const c=aiCfg();c.on=false;try{localStorage.setItem('doudou-ai',JSON.stringify(c))}catch(e){}toast('已关闭 AI');renderDecks()};
 }
 
-async function aiFill(btn,items){
-  const need=items.filter(i=>!hasEx(i)).slice(0,40);if(!need.length)return toast('这些词都有例句啦');
-  btn.disabled=true;btn.textContent='AI 正在写句子…';
-  try{
-    const arr=await aiJSON(`你在帮中国小学生（6-10 岁）背英语单词。请给下面每个单词写一个简单的英文例句和中文翻译。
+/* 给没有例句的单词配一个固定例句（保存进词库，跟读、拼句子都用它） */
+async function fillExamples(items){
+  const need=items.filter(i=>!hasEx(i)).slice(0,40);if(!need.length)return 0;
+  const arr=await aiJSON(`你在帮中国小学生（6-10 岁）背英语单词。请给下面每个单词写一个简单的英文例句和中文翻译。
 要求：句子 4-8 个词，只用小学低年级常见词汇，以一般现在时为主；句子里必须原样出现这个单词（名词可以用复数形式，不要换成别的词形）；中文翻译自然、口语化；每句句式尽量不同；句子结尾有句号、问号或感叹号。
 只回复一个 JSON 数组，每项 {"en":"单词","ex":"英文例句","zh":"中文翻译"}。例如：[{"en":"apple","ex":"I eat an apple every day.","zh":"我每天吃一个苹果。"}]
 单词列表：
-${need.map(i=>i.en+' — '+i.zh).join('\n')}`);
-    let n=0;
-    for(const a of Array.isArray(arr)?arr:[]){const it=need.find(i=>i.en.toLowerCase()===String(a.en||'').trim().toLowerCase());
-      if(it&&a.ex&&a.zh){const old=[it.ex,it.exZh];it.ex=String(a.ex).trim();it.exZh=String(a.zh).trim();if(hasEx(it))n++;else[it.ex,it.exZh]=old}}
-    save();toast(`配好了 ${n} 个例句`);
-  }catch(e){const c=e&&e.code;
-    if(c!=='cancelled')toast(aiErrMsg(e))}
+${need.map(i=>i.en+' — '+i.zh).join('\n')}`,40000);
+  let n=0;
+  for(const a of Array.isArray(arr)?arr:[]){const it=need.find(i=>i.en.toLowerCase()===String(a.en||'').trim().toLowerCase());
+    if(it&&a.ex&&a.zh){const old=[it.ex,it.exZh];it.ex=String(a.ex).trim();it.exZh=String(a.zh).trim();if(hasEx(it))n++;else[it.ex,it.exZh]=old}}
+  save();return n}
+async function aiFill(btn,items){
+  if(!items.filter(i=>!hasEx(i)).length)return toast('这些词都有例句啦');
+  btn.disabled=true;btn.textContent='AI 正在写句子…';
+  try{const n=await fillExamples(items);toast(`配好了 ${n} 个例句`)}
+  catch(e){const c=e&&e.code;if(c!=='cancelled')toast(aiErrMsg(e))}
   if(!$('#gbody'))go(tab);
 }
 
