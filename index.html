@@ -285,6 +285,7 @@ rt{ruby-align:center}
 @media (max-width:440px){.ghead h2{font-size:18px}.ghead .chip{font-size:12.5px;padding:3px 8px}.ghead .btn.small{padding:6px 9px}}
 .mic.hold{border-radius:999px;padding:22px 16px;font-size:21px;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:none}
 .mic.hold.on{transform:scale(.97)}
+.bkmsg{font-size:15px;font-weight:700;color:var(--leaf);min-height:1em}.bkmsg.bad{color:var(--coral)}
 </style>
 
 <header class="top"><div class="wrap">
@@ -1479,17 +1480,37 @@ ${need.map(i=>i.en+' — '+i.zh).join('\n')}`);
 }
 
 
-function makeBackup(){const j=JSON.stringify(S);return 'DOUDOU1:'+btoa(unescape(encodeURIComponent(j)))}
-function readBackup(code){code=String(code).replace(/\s+/g,'');if(!code.startsWith('DOUDOU1:'))throw new Error('fmt');
-  const o=JSON.parse(decodeURIComponent(escape(atob(code.slice(8)))));if(!o||!Array.isArray(o.decks)||!o.pet)throw new Error('bad');return o}
+/* 备份码：新版用 gzip 压缩（更短、不容易复制断），并带长度，复制不完整时能提示出来；旧的 DOUDOU1 也能读 */
+const u8ToB64=u=>{let s='';for(let i=0;i<u.length;i+=8192)s+=String.fromCharCode.apply(null,u.subarray(i,i+8192));return btoa(s)};
+async function makeBackup(){const j=JSON.stringify(S);
+  try{if(window.CompressionStream){const st=new Blob([j]).stream().pipeThrough(new CompressionStream('gzip'));const b64=u8ToB64(new Uint8Array(await new Response(st).arrayBuffer()));return 'DOUDOU2:'+b64.length+':'+b64}}catch(e){}
+  return 'DOUDOU1:'+btoa(unescape(encodeURIComponent(j)))}
+async function readBackup(raw){
+  const s=String(raw).replace(/[\s​-‍﻿]+/g,'').replace(/：/g,':');const m=s.match(/doudou([12]):([A-Za-z0-9+/=:]+)/i);
+  if(!m)throw {msg:'没找到备份码，备份码以 DOUDOU 开头'};let j;
+  if(m[1]==='2'){const k=m[2].indexOf(':'),len=+m[2].slice(0,k),b64=m[2].slice(k+1);
+    if(!b64||b64.length<len)throw {msg:`备份码不完整：应该有 ${len} 个字符，现在只有 ${b64.length} 个，请重新完整复制`};
+    if(!window.DecompressionStream)throw {msg:'这个浏览器版本太旧，读不了这个备份码，请用 Safari 打开'};
+    try{const bin=atob(b64.slice(0,len)),u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);
+      j=await new Response(new Blob([u]).stream().pipeThrough(new DecompressionStream('gzip'))).text()}catch(e){throw {msg:'备份码损坏了，请重新复制'}}}
+  else{try{j=decodeURIComponent(escape(atob(m[2].replace(/:/g,''))))}catch(e){throw {msg:'备份码不完整或被改动了（字母大小写也不能变），请重新完整复制'}}}
+  let o;try{o=JSON.parse(j)}catch(e){throw {msg:'备份码不完整，请重新完整复制'}}
+  if(!o||!Array.isArray(o.decks)||!o.pet)throw {msg:'这不是有效的备份码'};return o}
+/* 注：只有开头 DOUDOU 不区分大小写，后面的内容区分大小写，不能改动 */
 function bindBackup(){
-  $('#bkMake').onclick=()=>{const o=$('#bkOut');o.value=makeBackup();o.hidden=false;$('#bkCopy').hidden=false;o.focus();o.select();
-    $('#bkStat').textContent='';toast('备份码已生成，复制后发到微信保存')};
+  const st=(t,bad)=>{const e=$('#bkStat');e.textContent=t;e.className='bkmsg'+(bad?' bad':'')};
+  $('#bkMake').onclick=async()=>{const o=$('#bkOut');o.value=await makeBackup();o.hidden=false;$('#bkCopy').hidden=false;const sh=$('#bkShare');if(sh)sh.hidden=!navigator.share;
+    st(`已生成，共 ${o.value.length} 个字符。点「复制」，再发到微信「文件传输助手」保存`)};
   $('#bkCopy').onclick=async()=>{const o=$('#bkOut');try{await navigator.clipboard.writeText(o.value);toast('已复制，去微信粘贴保存吧')}
-    catch(e){o.focus();o.select();try{document.execCommand('copy');toast('已复制，去微信粘贴保存吧')}catch(e2){toast('请长按文本框，全选后复制')}}};
-  const ld=$('#bkLoad');ld.onclick=()=>{let o;try{o=readBackup($('#bkIn').value)}catch(e){$('#bkStat').textContent='备份码不对，请完整粘贴（以 DOUDOU1: 开头）';return}
+    catch(e){o.focus();o.setSelectionRange(0,o.value.length);try{document.execCommand('copy');toast('已复制，去微信粘贴保存吧')}catch(e2){toast('请长按文本框，选「全选」再复制')}}};
+  const sh=$('#bkShare');if(sh)sh.onclick=async()=>{try{await navigator.share({text:$('#bkOut').value})}catch(e){}};
+  const pa=$('#bkPaste');if(pa){if(!navigator.clipboard||!navigator.clipboard.readText)pa.hidden=true;
+    pa.onclick=async()=>{try{const t=await navigator.clipboard.readText();$('#bkIn').value=t;st(t?`已粘贴 ${t.length} 个字符，点「恢复进度」`:'剪贴板是空的')}catch(e){toast('请长按下面的框，选「粘贴」')}}}
+  const ld=$('#bkLoad');ld.onclick=async()=>{
+    const raw=$('#bkIn').value;if(!raw.trim())return st('先把备份码粘贴到上面的框里',true);
+    let o;try{o=await readBackup(raw)}catch(e){toast(e.msg||'备份码不对');return st(e.msg||'备份码不对',true)}
     if(!ld.dataset.armed){ld.dataset.armed='1';ld.textContent='确定恢复（会覆盖现在的记录）';ld.classList.add('coral');
-      $('#bkStat').textContent=`备份里有 ${Object.keys(o.srs||{}).length} 个学过的词、${o.food||0} 个苹果`;return}
+      return st(`备份码没问题：里面有 ${Object.keys(o.srs||{}).length} 个学过的词、${o.food||0} 个苹果、宠物「${(o.pet&&o.pet.name)||''}」。再点一次按钮就恢复`)}
     S=Object.assign(fresh(),o);S.pet=Object.assign({sp:'leaf'},S.pet);S.stepsV=S.stepsV||2;save();bubbleText='';talk=null;hud();toast('进度已恢复！');go('today')};
 }
 const DUP='dupmaster',DUP_NAME='重复导入（已掌握）';
@@ -1551,10 +1572,11 @@ function renderDecks(){
     ${wrong.length?`<div class="items">${wrong.map(([id,n])=>{const it=m.get(id);return `<div class="item"><button class="iconbtn" data-say="${esc(it.en)}" aria-label="朗读">🔊</button><div class="t"><b>${esc(it.en)}</b><span>${esc(it.zh)}</span></div><span class="chip">错 ${n}</span></div>`}).join('')}</div>`:'<div class="empty">还没有错词，太棒了！</div>'}</div>
    <div class="card stack" style="gap:10px"><h2 style="font-size:21px">备份 / 恢复进度</h2>
     <p class="hint" style="margin:0">学习记录、苹果、宠物、徽章、导入的词库都存在这台手机的浏览器里。定期生成一段备份码，发到微信里存着；记录丢了或换手机时，粘贴回来就能全部恢复。</p>
-    <div class="row"><button class="btn go" id="bkMake">生成备份码</button><button class="btn" id="bkCopy" hidden>复制</button></div>
-    <textarea id="bkOut" readonly hidden style="min-height:90px"></textarea>
-    <div><label class="lb" for="bkIn">恢复：把备份码粘贴到这里</label><textarea id="bkIn" style="min-height:90px" placeholder="DOUDOU1:..."></textarea></div>
-    <div class="row"><button class="btn" id="bkLoad">恢复进度</button><span class="sub" id="bkStat" style="margin:0"></span></div></div>
+    <div class="row"><button class="btn go" id="bkMake">生成备份码</button><button class="btn" id="bkCopy" hidden>复制</button><button class="btn" id="bkShare" hidden>分享到微信</button></div>
+    <textarea id="bkOut" readonly hidden style="min-height:90px" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
+    <div><label class="lb" for="bkIn">恢复：把备份码粘贴到这里</label><textarea id="bkIn" style="min-height:90px" placeholder="长按这里，选「粘贴」" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea></div>
+    <div class="row"><button class="btn" id="bkPaste">📋 从剪贴板粘贴</button><button class="btn go" id="bkLoad">恢复进度</button></div>
+    <div class="bkmsg" id="bkStat"></div></div>
    <div class="row"><button class="btn small" id="resetBtn">重置所有进度…</button><span id="resetConfirm" hidden><button class="btn small coral" id="resetYes">确定清空（宠物、苹果、学习记录、导入的词库都会清掉）</button></span></div>
   </div>`;
   foldCards();
