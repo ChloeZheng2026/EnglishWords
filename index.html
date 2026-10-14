@@ -431,7 +431,11 @@ function buildDay(force){
     .sort((a,b)=>a[1].due<b[1].due?-1:a[1].due>b[1].due?1:0).slice(0,S.maxReview||5).map(e=>e[0]);
   S.day={date:t,newIds:nextNew(S.newPerDay),revIds:rev,step:0,missed:{},started:false,done:false,...patPlan()};save();
 }
-function nextNew(n){const d=deck(),my=myDeck();const pool=(my&&d!==my?my.items:[]).concat(d?d.items:[]);const seen=new Set();return pool.filter(it=>{const k=it.en.toLowerCase();if(S.srs[it.id]||seen.has(k))return false;seen.add(k);return true}).slice(0,n).map(it=>it.id)}
+/* 新词顺序：生词本最多 2 个 → 使用中的词库（包括新加进去的词）→ 生词本剩下的 → 其他词库。学过的同一个单词不重复学 */
+function nextNew(n){const d=deck(),my=myDeck();const unl=dk=>dk?dk.items.filter(it=>!S.srs[it.id]):[];
+  const myU=my&&d!==my?unl(my):[];const others=S.decks.filter(x=>x!==d&&x!==my&&x.id!=='dupmaster').flatMap(unl);
+  const m=wordMap(),seen=new Set(Object.keys(S.srs).map(id=>m.get(id)).filter(Boolean).map(it=>it.en.toLowerCase()));
+  return myU.slice(0,2).concat(unl(d),myU.slice(2),others).filter(it=>{const k=it.en.toLowerCase();if(seen.has(k))return false;seen.add(k);return true}).slice(0,n).map(it=>it.id)}
 function dayItems(){const m=wordMap();return [...S.day.revIds,...S.day.newIds].map(id=>m.get(id)).filter(Boolean)}
 
 function markMiss(ctx,id){S.wc[id]=(S.wc[id]||0)+1;if(ctx.mode==='day')S.day.missed[id]=(S.day.missed[id]||0)+1;save()}
@@ -1023,6 +1027,56 @@ async function openWordSheet(word,sentence){
   else{z.textContent='没查到意思，填上中文就能加入生词本';const inp=$('#wsIn');inp.hidden=false;const b=$('#wsAdd');b.hidden=false;b.className='btn go';
     b.onclick=()=>{const v=inp.value.trim();if(!v)return toast('先填上中文意思');zh=v;inp.hidden=true;z.textContent=v;const back=addToMyWords(base,v);done(back?'这个词原来在「已掌握」里，已移回生词本重新学':'已加入生词本')}}
 }
+/* --- 现成词库：KET（A2 Key）常考词汇，按主题整理；KET 口语第一部分常见问句 --- */
+const KET_WORDS=[
+['动物','animal=动物;bear=熊;bee=蜜蜂;bird=鸟;cat=猫;chicken=鸡;cow=奶牛;dog=狗;duck=鸭子;elephant=大象;fish=鱼;frog=青蛙;giraffe=长颈鹿;goat=山羊;horse=马;insect=昆虫;kangaroo=袋鼠;lion=狮子;monkey=猴子;mouse=老鼠;panda=熊猫;pet=宠物;pig=猪;rabbit=兔子;sheep=绵羊;snake=蛇;spider=蜘蛛;tiger=老虎;whale=鲸鱼;dolphin=海豚;shark=鲨鱼;wild=野生的;zoo=动物园;farm=农场;tail=尾巴;wing=翅膀'],
+['衣服','clothes=衣服;bag=包;belt=腰带;boot=靴子;cap=鸭舌帽;coat=外套;dress=连衣裙;glasses=眼镜;glove=手套;hat=帽子;jacket=夹克;jeans=牛仔裤;jumper=套头毛衣;necklace=项链;pocket=口袋;pyjamas=睡衣;ring=戒指;scarf=围巾;shirt=衬衫;shoe=鞋;shorts=短裤;skirt=短裙;sock=袜子;sweater=毛衣;swimsuit=泳衣;T-shirt=T恤;tie=领带;trainers=运动鞋;trousers=裤子;umbrella=雨伞;uniform=制服;wear=穿戴;watch=手表;size=尺码;fashion=时尚'],
+['颜色','colour=颜色;black=黑色;blue=蓝色;brown=棕色;dark=深色的;gold=金色;green=绿色;grey=灰色;light=浅色的;pink=粉色;purple=紫色;red=红色;silver=银色;white=白色;yellow=黄色'],
+['家人朋友','family=家庭;father=父亲;mother=母亲;dad=爸爸;mum=妈妈;parent=父母;brother=兄弟;sister=姐妹;son=儿子;daughter=女儿;grandfather=祖父;grandmother=祖母;grandparent=祖父母;aunt=阿姨;uncle=叔叔;cousin=堂（表）兄弟姐妹;husband=丈夫;wife=妻子;baby=婴儿;child=孩子;kid=小孩;boy=男孩;girl=女孩;man=男人;woman=女人;people=人们;friend=朋友;neighbour=邻居;guest=客人;birthday=生日;party=聚会;together=一起'],
+['食物饮料','food=食物;apple=苹果;banana=香蕉;biscuit=饼干;bread=面包;breakfast=早餐;lunch=午餐;dinner=晚餐;meal=一顿饭;burger=汉堡;butter=黄油;cake=蛋糕;carrot=胡萝卜;cheese=奶酪;chips=薯条;chocolate=巧克力;coffee=咖啡;tea=茶;egg=鸡蛋;fruit=水果;grape=葡萄;ice cream=冰淇淋;juice=果汁;lemon=柠檬;meat=肉;milk=牛奶;noodles=面条;pasta=意大利面;pizza=披萨;potato=土豆;rice=米饭;salad=沙拉;sandwich=三明治;soup=汤;sugar=糖;tomato=西红柿;vegetable=蔬菜;water=水;hungry=饿的;thirsty=渴的;delicious=美味的;menu=菜单;restaurant=餐厅;plate=盘子;cup=杯子;bottle=瓶子;fork=叉子;knife=刀;spoon=勺子;cook=做饭'],
+['身体健康','body=身体;head=头;hair=头发;face=脸;eye=眼睛;ear=耳朵;nose=鼻子;mouth=嘴;tooth=牙齿;neck=脖子;shoulder=肩膀;arm=手臂;hand=手;finger=手指;leg=腿;foot=脚;back=后背;stomach=肚子;healthy=健康的;ill=生病的;sick=生病的;cough=咳嗽;headache=头疼;fever=发烧;hurt=受伤;pain=疼痛;medicine=药;doctor=医生;nurse=护士;dentist=牙医;hospital=医院;exercise=锻炼;rest=休息;tired=累的'],
+['爱好休闲','hobby=爱好;free time=空闲时间;camping=露营;chess=国际象棋;collect=收集;dance=跳舞;draw=画画;paint=涂色;drum=鼓;guitar=吉他;piano=钢琴;music=音乐;song=歌曲;sing=唱歌;film=电影;cartoon=卡通片;game=游戏;toy=玩具;puzzle=拼图;picnic=野餐;concert=音乐会;museum=博物馆;holiday=假期;weekend=周末;club=俱乐部;magazine=杂志;comic=漫画书;photo=照片;camera=相机;enjoy=享受;fun=乐趣'],
+['房屋家居','house=房子;home=家;flat=公寓;room=房间;bedroom=卧室;bathroom=浴室;kitchen=厨房;living room=客厅;garden=花园;door=门;window=窗户;wall=墙;floor=地板;roof=屋顶;stairs=楼梯;upstairs=楼上;downstairs=楼下;bed=床;chair=椅子;armchair=扶手椅;sofa=沙发;table=桌子;desk=书桌;shelf=架子;cupboard=橱柜;fridge=冰箱;lamp=台灯;mirror=镜子;clock=钟;television=电视;carpet=地毯;shower=淋浴;toilet=厕所;towel=毛巾;soap=肥皂;blanket=毯子;pillow=枕头;key=钥匙'],
+['学校学习','school=学校;classroom=教室;class=班级;lesson=课;subject=科目;teacher=老师;student=学生;book=书;notebook=笔记本;dictionary=词典;pen=钢笔;pencil=铅笔;rubber=橡皮;ruler=尺子;homework=作业;exam=考试;test=测验;English=英语;maths=数学;science=科学;history=历史;geography=地理;art=美术;library=图书馆;playground=操场;timetable=课程表;break=课间休息;learn=学习;study=学习;question=问题;answer=回答;page=页;word=单词;sentence=句子;spell=拼写;mistake=错误;practise=练习;project=课题;university=大学'],
+['城镇地点','town=城镇;city=城市;village=村庄;street=街道;road=道路;square=广场;centre=中心;bank=银行;bridge=桥;building=建筑物;café=咖啡馆;castle=城堡;cinema=电影院;theatre=剧院;church=教堂;factory=工厂;hotel=酒店;market=市场;office=办公室;park=公园;police station=警察局;post office=邮局;shop=商店;supermarket=超市;tower=塔;corner=拐角;map=地图;left=左边;right=右边;straight=直地;near=附近的;far=远的;opposite=在对面;between=在两者之间'],
+['大自然天气','nature=大自然;beach=海滩;sea=大海;ocean=海洋;river=河;lake=湖;mountain=山;hill=小山;island=岛;forest=森林;wood=树林;jungle=丛林;desert=沙漠;field=田野;flower=花;grass=草;tree=树;plant=植物;leaf=叶子;rock=岩石;sky=天空;sun=太阳;moon=月亮;star=星星;earth=地球;environment=环境;rubbish=垃圾;recycle=回收;weather=天气;cloud=云;cloudy=多云的;fog=雾;rain=雨;rainy=下雨的;snow=雪;storm=暴风雨;sunny=晴朗的;wind=风;windy=有风的;hot=热的;warm=温暖的;cold=冷的;cool=凉爽的;wet=湿的;dry=干的;ice=冰;temperature=温度;season=季节;spring=春天;summer=夏天;autumn=秋天;winter=冬天'],
+['交通旅行','travel=旅行;trip=短途旅行;journey=旅程;holiday=假期;airport=机场;plane=飞机;helicopter=直升机;boat=小船;ship=轮船;bus=公交车;car=汽车;taxi=出租车;train=火车;underground=地铁;bicycle=自行车;bike=自行车;motorbike=摩托车;station=车站;platform=站台;ticket=票;passport=护照;luggage=行李;suitcase=手提箱;seat=座位;tourist=游客;traffic=交通;drive=开车;ride=骑;visit=参观;arrive=到达;leave=离开;early=早的;late=迟的'],
+['工作职业','job=工作;work=工作;worker=工人;actor=演员;artist=艺术家;chef=厨师;driver=司机;engineer=工程师;farmer=农民;firefighter=消防员;manager=经理;mechanic=机修工;musician=音乐家;pilot=飞行员;police officer=警察;scientist=科学家;singer=歌手;waiter=服务员;writer=作家;photographer=摄影师;shop assistant=售货员;company=公司;money=钱;busy=忙的'],
+['购物','shopping=购物;buy=买;sell=卖;pay=付钱;price=价格;cost=花费;cheap=便宜的;expensive=贵的;customer=顾客;cash=现金;change=零钱;sale=促销;receipt=收据;try on=试穿;gift=礼物;present=礼物;open=开着的;closed=关着的;pound=英镑;dollar=美元'],
+['运动','sport=运动;football=足球;basketball=篮球;volleyball=排球;tennis=网球;badminton=羽毛球;baseball=棒球;golf=高尔夫;hockey=曲棍球;ice skating=滑冰;ski=滑雪;skateboard=滑板;sailing=帆船运动;swimming pool=游泳池;team=队;player=运动员;coach=教练;match=比赛;race=赛跑;competition=比赛;champion=冠军;score=得分;goal=进球;ball=球;win=赢;lose=输;run=跑;jump=跳;climb=攀爬;throw=扔;catch=接住;kick=踢;swim=游泳'],
+['感受性格','happy=快乐的;sad=难过的;angry=生气的;afraid=害怕的;bored=无聊的;excited=兴奋的;surprised=惊讶的;worried=担心的;nervous=紧张的;lonely=孤独的;glad=高兴的;sorry=抱歉的;brave=勇敢的;clever=聪明的;friendly=友好的;funny=有趣的;kind=善良的;lazy=懒惰的;polite=有礼貌的;quiet=安静的;shy=害羞的;nice=好的;love=爱;like=喜欢;hate=讨厌;hope=希望;feel=感觉;smile=微笑;laugh=大笑;cry=哭'],
+['时间','time=时间;today=今天;tomorrow=明天;yesterday=昨天;morning=早上;afternoon=下午;evening=晚上;night=夜晚;week=星期;month=月;year=年;hour=小时;minute=分钟;Monday=星期一;Tuesday=星期二;Wednesday=星期三;Thursday=星期四;Friday=星期五;Saturday=星期六;Sunday=星期天;January=一月;February=二月;March=三月;April=四月;May=五月;June=六月;July=七月;August=八月;September=九月;October=十月;November=十一月;December=十二月;always=总是;usually=通常;often=经常;sometimes=有时;never=从不;soon=很快;now=现在;then=然后;ago=以前;already=已经'],
+['通讯科技','computer=电脑;laptop=笔记本电脑;keyboard=键盘;screen=屏幕;mobile phone=手机;telephone=电话;call=打电话;message=消息;text=发短信;email=电子邮件;internet=互联网;online=在线的;website=网站;app=应用程序;download=下载;click=点击;password=密码;print=打印;send=发送;video=视频;chat=聊天;letter=信;address=地址;post=邮寄;robot=机器人;technology=科技'],
+['常用动词','ask=问;begin=开始;start=开始;finish=完成;bring=带来;carry=携带;choose=选择;close=关上;come=来;go=去;do=做;make=制作;drink=喝;eat=吃;find=找到;look for=寻找;forget=忘记;remember=记得;get up=起床;wake up=醒来;give=给;take=拿;help=帮助;keep=保持;know=知道;listen=听;look=看;see=看见;watch=观看;live=居住;meet=遇见;move=移动;need=需要;want=想要;play=玩;put=放;put on=穿上;say=说;speak=说话;talk=交谈;tell=告诉;show=展示;sit=坐;stand=站;sleep=睡觉;stop=停止;think=想;try=尝试;turn=转动;understand=理解;use=使用;wait=等待;walk=走;wash=洗;write=写;read=读'],
+['常用形容词','big=大的;small=小的;long=长的;short=短的;tall=高的;high=高的;low=低的;new=新的;old=老的;young=年轻的;good=好的;bad=坏的;great=很棒的;wonderful=精彩的;beautiful=美丽的;easy=容易的;difficult=困难的;fast=快的;slow=慢的;quick=迅速的;full=满的;empty=空的;clean=干净的;dirty=脏的;strong=强壮的;heavy=重的;loud=大声的;important=重要的;interesting=有趣的;boring=无聊的;different=不同的;same=相同的;favourite=最喜欢的;famous=著名的;special=特别的;safe=安全的;dangerous=危险的;ready=准备好的;wrong=错误的;true=真的;real=真实的;possible=可能的']];
+const KET_TALK=[
+['问来自哪里',"Where are you from?","I'm from China."],['问和谁住',"Who do you live with?","I live with my parents."],
+['问兄弟姐妹',"Do you have any brothers or sisters?","Yes, I have a little brother."],['问最喜欢的科目',"What's your favourite subject?","My favourite subject is English."],
+['问为什么喜欢',"Why do you like it?","Because it's interesting."],['问空闲时间',"What do you do in your free time?","I like reading and drawing."],
+['问上周末',"What did you do last weekend?","I went to the park with my family."],['问下周末打算',"What are you going to do next weekend?","I'm going to visit my grandparents."],
+['问怎么去学校',"How do you get to school?","I get to school by bus."],['问几点起床',"What time do you get up?","I get up at seven o'clock."],
+['问早餐',"What do you usually have for breakfast?","I usually have milk and bread."],['问最好的朋友',"Who is your best friend?","My best friend is Amy."],
+['问朋友长相',"What does your best friend look like?","She has long black hair."],['问最喜欢的食物',"What's your favourite food?","My favourite food is noodles."],
+['问喜欢的运动',"What sports do you like?","I like swimming and football."],['问多久运动一次',"How often do you play sports?","I play football twice a week."],
+['问今天天气',"What's the weather like today?","It's sunny and warm."],['问上次假期',"Where did you go on your last holiday?","I went to the beach."],
+['问将来的梦想',"What do you want to be in the future?","I want to be a doctor."],['问有没有宠物',"Have you got a pet?","Yes, I've got a dog."],
+['问房子什么样',"What's your house like?","It's big and it has a small garden."],['问最喜欢的房间',"What's your favourite room?","My favourite room is my bedroom."],
+['问喜不喜欢看书',"Do you like reading books?","Yes, I love reading stories."],['问喜欢的音乐',"What kind of music do you like?","I like pop music."],
+['问会不会乐器',"Can you play a musical instrument?","Yes, I can play the piano."],['问和家人做什么',"What do you like doing with your family?","We like watching films together."],
+['问班级人数',"How many students are there in your class?","There are forty students in my class."],['问学校什么样',"What's your school like?","It's big and beautiful."],
+['问喜不喜欢购物',"Do you like shopping?","Yes, I like buying books."],['问最喜欢星期几',"What's your favourite day of the week?","My favourite day is Saturday."],
+['问昨天晚饭',"What did you have for dinner yesterday?","I had rice and fish."],['问怎么过生日',"How do you celebrate your birthday?","I have a party with my friends."],
+['问放学后做什么',"What do you do after school?","I do my homework and play outside."],['问更喜欢哪个',"Which do you prefer, cats or dogs?","I prefer dogs."],
+['问想去哪个国家',"Which country would you like to visit?","I'd like to visit England."],['问家乡最好的地方',"What's the best thing about your town?","There is a big park."],
+['问学英语多久',"How long have you studied English?","I have studied English for three years."],['问周末通常做什么',"What do you usually do at the weekend?","I usually play with my friends."],
+['问喜欢的季节为什么',"Why do you like summer?","Because I can go swimming."],['问上学路上多久',"How long does it take to get to school?","It takes about twenty minutes."]];
+const ketCount=()=>{const s=new Set();KET_WORDS.forEach(([t,str])=>str.split(';').forEach(p=>s.add(p.split('=')[0].toLowerCase())));return s.size};
+function importKetWords(){
+  const words=[];const seen=new Set();
+  KET_WORDS.forEach(([t,str])=>str.split(';').forEach(p=>{const [en,zh]=p.split('=');const k=en.toLowerCase();if(en&&zh&&!seen.has(k)){seen.add(k);words.push({en,zh})}}));
+  const {fresh,dup}=splitMastered(words);let d=S.decks.find(x=>x.id==='pk_ket');if(!d){d={id:'pk_ket',name:'KET 核心词汇',items:[]};S.decks.push(d)}
+  const n=addWords(d,fresh);save();return {n,dup:dup.length}}
+function importKetTalk(){return addDialogs(KET_TALK.map(([t,q,a])=>({t:'KET·'+t,q,a})))}
 function runStep(ctx,step){
   if(step.key==='talk')return patternStep(ctx);
   const gen=step.key==='fill'||step.key==='cloze';
@@ -1633,7 +1687,7 @@ function bindBackup(){
 const DUP='dupmaster',DUP_NAME='重复导入（已掌握）';
 function splitMastered(words){const fresh=[],dup=[];for(const w of words)(isMastered(w.en)?dup:fresh).push(w);
   if(dup.length){let d=S.decks.find(x=>x.id===DUP);if(!d){d={id:DUP,name:DUP_NAME,items:[]};S.decks.push(d)}addWords(d,dup);save()}return {fresh,dup}}
-let openDeck=null;const openSecs=new Set();
+let openDeck=null,renaming=null;const openSecs=new Set();
 function foldCards(){document.querySelectorAll('#view .card').forEach(c=>{const h=c.querySelector(':scope > h2');if(!h)return;
   const key=h.textContent.split('·')[0].trim();const d=document.createElement('details');d.className=c.className.replace(/\bstack\b/,'')+' fold';if(openSecs.has(key))d.open=true;
   const sm=document.createElement('summary');sm.appendChild(h);const body=document.createElement('div');body.className='stack foldbody';body.style.gap='12px';
@@ -1646,9 +1700,9 @@ function renderDecks(){
   const mastered=Object.entries(S.srs).filter(([id,r])=>r.mastered&&m.has(id));
   const d=deck(),dNoEx=d.items.filter(i=>!hasEx(i));
   $('#view').innerHTML=`<div class="stack">
-   <div><h2>我的词库</h2><p class="sub">每天的新单词先从「生词本」取，再从「使用中」的词库里按顺序取。做题时点句子里不认识的词，可以加进生词本。</p>
+   <div><h2>我的词库</h2><p class="sub">每天的新单词：先从「使用中」的词库按顺序取（每天会插入最多 2 个生词本里的词），这个词库学完了自动接着学其他词库。点 ✏️ 可以改词库名字。</p>
     <div class="stack" style="gap:10px">${S.decks.map(dk=>{const learned=dk.items.filter(i=>S.srs[i.id]).length;return `
-     <div class="deck ${dk.id===S.active?'on':''}"><div class="nm">${esc(dk.name)}<small>${dk.items.length} 个单词 · 学过 ${learned} 个 · ${dk.items.filter(hasEx).length} 个有例句</small></div>
+     <div class="deck ${dk.id===S.active?'on':''}"><div class="nm">${renaming===dk.id?`<div class="row" style="gap:6px;flex-wrap:nowrap"><input type="text" id="renIn" value="${esc(dk.name)}" maxlength="20" style="padding:6px 10px"><button class="btn small go" data-rensave="${dk.id}">保存</button></div>`:`${esc(dk.name)} <button class="linkbtn" data-ren="${dk.id}" style="margin:0;text-decoration:none" aria-label="改名">✏️</button>`}<small>${dk.items.length} 个单词 · 学过 ${learned} 个 · ${dk.items.filter(hasEx).length} 个有例句</small></div>
       ${dk.id===S.active?'<span class="chip">使用中</span>':`<button class="btn small go" data-use="${dk.id}">使用</button>`}
       <button class="btn small" data-open="${dk.id}">${openDeck===dk.id?'收起':'查看'}</button><button class="btn small" data-deldeck="${dk.id}" aria-label="删除词库">✕</button></div>
      ${openDeck===dk.id?`<div class="items">${dk.items.map((it,k)=>`<div class="item"><button class="iconbtn" data-say="${esc(it.en)}" aria-label="朗读">🔊</button>
@@ -1656,16 +1710,24 @@ function renderDecks(){
        ${dk.id===DUP?`<div class="help">这些词导入时发现已经在「已掌握」里了。需要重新学的点「重新学」，会移出已掌握、放进生词本；不需要的直接删掉这个文件夹。<div class="row" style="margin-top:8px"><button class="btn small go" data-relearn="*">全部重新学</button></div></div>`:''}`:''}`}).join('')}</div>
     ${aiReady()&&dNoEx.length?`<div class="help" style="margin-top:10px">「${esc(d.name)}」有 ${dNoEx.length} 个词没有例句。<button class="btn small" id="aiD" style="margin-left:6px">✨ 让 AI 配例句</button></div>`:''}</div>
 
+   <div class="card stack" style="gap:10px"><h2 style="font-size:21px">现成词库（一键导入）</h2>
+    <div class="deck"><div class="nm">KET 核心词汇<small>剑桥 A2 Key 常考词，按动物、食物、学校、天气等 ${KET_WORDS.length} 个主题整理，共 ${ketCount()} 个</small></div>
+     ${S.decks.some(x=>x.id==='pk_ket')?'<span class="chip">已导入</span>':'<button class="btn small go" id="pkKet">导入</button>'}</div>
+    <div class="deck"><div class="nm">KET 口语问句<small>口语考试第一部分常问的 ${KET_TALK.length} 个问题和参考回答，导入到每日对话</small></div>
+     ${KET_TALK.every(([t,q])=>(S.myPats||[]).some(p=>normEn(p.q)===normEn(q))||PATTERNS.some(p=>normEn(p.q)===normEn(q)))?'<span class="chip">已导入</span>':'<button class="btn small go" id="pkKetTalk">导入</button>'}</div>
+    <p class="hint" style="margin:0">导入后没有例句的词，做到句子关卡时 AI 会自动配例句。</p></div>
+
    <div class="card stack" style="gap:12px">
     <h2 style="font-size:21px">导入新单词</h2>
-    <div><label class="lb" for="impName">词库名字</label><input type="text" id="impName" placeholder="例如：三年级上 Unit 3"></div>
+    <div class="setrow"><label class="lb" for="impTo" style="margin:0">导入到</label><select id="impTo"><option value="__new">＋ 新建一个词库</option>${S.decks.filter(x=>x.id!==DUP).map(x=>`<option value="${x.id}" ${x.id===S.active?'':''}>${esc(x.name)}</option>`).join('')}</select></div>
+    <div id="impNameBox"><label class="lb" for="impName">新词库名字</label><input type="text" id="impName" placeholder="例如：三年级上 Unit 3"></div>
     <div><label class="lb" for="impText">粘贴单词（一行一个）</label>
      <textarea id="impText" placeholder="apple 苹果&#10;red | 红色的 | The apple is red. | 苹果是红色的。&#10;book, 书"></textarea></div>
     <div class="help">最简单：每行「英文 中文」。想带例句就用竖线隔开：<code>单词 | 中文 | 例句 | 例句中文</code>。<br>
      也可以单独一行写句子（如 <code>I like apples. 我喜欢苹果。</code>），会自动配给句子里出现的那个单词。没有例句的词${aiReady()?'可以让 AI 帮忙配，':''}句子关卡会跳过。<br>支持 <code>.txt</code> / <code>.csv</code>（Excel 另存为 CSV，四列：单词、中文、例句、例句中文）。</div>
     <div class="row"><input type="file" id="impFile" accept=".txt,.csv,text/plain,text/csv" style="max-width:100%"></div>
     <div class="row"><button class="btn" id="impImg" type="button">📷 拍照 / 图片识别单词</button><input type="file" id="impImgFile" accept="image/*" hidden></div>
-    <div class="row"><button class="btn go" id="impBtn">导入为新词库</button><button class="btn" id="addBtn">加到「${esc(d.name)}」</button><span class="sub" id="impInfo" style="margin:0"></span></div>
+    <div class="row"><button class="btn go" id="impBtn">导入</button><span class="sub" id="impInfo" style="margin:0"></span></div>
    </div>
 
    <div class="card stack" style="gap:10px"><h2 style="font-size:21px">AI 设置（豆包）</h2>${aiSettingsHTML()}</div>
@@ -1701,13 +1763,16 @@ function renderDecks(){
     $('#impInfo').textContent=r.words.length?`识别到 ${r.words.length} 个单词，其中 ${ex} 个有例句${r.dropped?`；${r.dropped} 个句子没找到对应单词`:''}`:''};
   $('#impText').oninput=info;
   $('#impFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{$('#impText').value=r.result;if(!$('#impName').value)$('#impName').value=f.name.replace(/\.\w+$/,'');info()};r.readAsText(f)};
+  const impTo=$('#impTo');impTo.onchange=()=>{$('#impNameBox').hidden=impTo.value!=='__new'};
   $('#impBtn').onclick=()=>{const r=parseText($('#impText').value);if(!r.words.length)return toast('没有识别到单词，每行要有英文和中文哦');
-    const {fresh,dup}=splitMastered(r.words);
-    if(fresh.length){const id='d'+Date.now(),nd={id,name:$('#impName').value.trim()||'我的词库 '+S.decks.length,items:[]};addWords(nd,fresh);S.decks.push(nd);openDeck=id;S.active=id}
-    if(dup.length)openDeck=DUP;
-    switchDeck(S.active,renderDecks);toast((fresh.length?`导入了 ${fresh.length} 个单词，已切换到新词库`:'没有新单词')+(dup.length?`；${dup.length} 个已掌握的词放进了「${DUP_NAME}」等你确认`:''))};
-  $('#addBtn').onclick=()=>{const r=parseText($('#impText').value);if(!r.words.length)return toast('没有识别到单词，每行要有英文和中文哦');
-    const {fresh,dup}=splitMastered(r.words);const n=addWords(deck(),fresh);if(S.day&&!S.day.done&&!dayItems().length)buildDay(true);save();toast(`新增 ${n} 个单词（重复的已跳过）`+(dup.length?`；${dup.length} 个已掌握的词放进了「${DUP_NAME}」等你确认`:''));if(dup.length)openDeck=DUP;renderDecks()};
+    const {fresh,dup}=splitMastered(r.words);let msg;
+    if(impTo.value==='__new'){if(fresh.length){const id='d'+Date.now(),nd={id,name:$('#impName').value.trim()||'我的词库 '+S.decks.length,items:[]};addWords(nd,fresh);S.decks.push(nd);openDeck=id;S.active=id}
+      msg=fresh.length?`导入了 ${fresh.length} 个单词，已建好新词库并开始使用`:'没有新单词'}
+    else{const dk=S.decks.find(x=>x.id===impTo.value);const n=addWords(dk,fresh);openDeck=dk.id;msg=`「${dk.name}」新增 ${n} 个单词（重复的已跳过）`}
+    if(dup.length)openDeck=DUP;$('#impText').value='';
+    switchDeck(S.active,renderDecks);toast(msg+(dup.length?`；${dup.length} 个已掌握的词放进了「${DUP_NAME}」等你确认`:''))};
+  const pk1=$('#pkKet');if(pk1)pk1.onclick=()=>{const r=importKetWords();openDeck='pk_ket';if(S.day&&!S.day.done&&!dayItems().length)buildDay(true);renderDecks();toast(`KET 词汇导入了 ${r.n} 个`+(r.dup?`，${r.dup} 个已掌握的放进了「${DUP_NAME}」`:'')+'。点「使用」就能开始学')};
+  const pk2=$('#pkKetTalk');if(pk2)pk2.onclick=()=>{const n=importKetTalk();if(S.day&&!S.day.started&&!S.day.done){Object.assign(S.day,patPlan());save()}renderDecks();toast(`导入了 ${n} 个 KET 口语问句，每日对话会先学它们`)};
   $('#npd').onchange=e=>{S.newPerDay=+e.target.value;if(S.day&&!S.day.started&&!S.day.done)buildDay(true);save();toast('明天起每天学 '+S.newPerDay+' 个新词')};
   bindAISettings();
   const dInfo=()=>{const n=parseDialog($('#dlgText').value).length;$('#dlgInfo').textContent=n?`识别到 ${n} 个问句`:''};
@@ -1751,6 +1816,8 @@ document.addEventListener('click',e=>{
   const tw=e.target.closest('[data-tw]');if(tw){const c=tw.closest('.sent,.passage');return tapWord(tw,tw.dataset.tw,c?c.textContent:'')}
   const s=e.target.closest('[data-say]');if(s)return say(s.dataset.say);
   const dp=e.target.closest('[data-delpat]');if(dp){const id=dp.dataset.delpat;S.myPats=(S.myPats||[]).filter(p=>p.id!==id);delete (S.pats||{})[id];save();toast('已删除');return renderDecks()}
+  const rn=e.target.closest('[data-ren]');if(rn){renaming=rn.dataset.ren;renderDecks();const i=$('#renIn');if(i){i.focus();i.select()}return}
+  const rs=e.target.closest('[data-rensave]');if(rs){const dk=S.decks.find(x=>x.id===rs.dataset.rensave);const v=($('#renIn').value||'').trim();if(dk&&v){dk.name=v;save();hud();toast('已改名')}renaming=null;return renderDecks()}
   const um=e.target.closest('[data-unmaster]');if(um){const r=S.srs[um.dataset.unmaster];if(r){r.mastered=false;r.st=0;r.due=addDays(today(),1)}save();toast('明天会复习它');return renderDecks()}
   const d=e.target.closest('[data-del]');if(d){const [id,k]=[d.dataset.del.slice(0,d.dataset.del.lastIndexOf(':')),+d.dataset.del.split(':').pop()];const dk=S.decks.find(x=>x.id===id);dk.items.splice(k,1);save();return renderDecks()}
   const dd=e.target.closest('[data-deldeck]');if(dd){
