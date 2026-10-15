@@ -359,10 +359,10 @@ const INTERVALS=[1,2,4,7,15]; // 复习间隔（天），连续答对 5 次复�
 const STEPS=[
  {key:'match',ico:'🧩',name:'单词配对',desc:'把英文和中文配成一对。点错的词会单独再练，最后全部再刷一遍。'},
  {key:'venzh',ico:'👀',name:'看英文选中文',desc:'看英文单词，选出正确的中文意思。'},
- {key:'vsay',ico:'💭',name:'看英文说中文',desc:'看英文单词，用嘴说出中文意思。说错的词会单独再练，最后全部再说一遍。'},
  {key:'vzhen',ico:'🔍',name:'看中文选英文',desc:'看中文，选出正确的英文单词。'},
  {key:'enzh',ico:'👂',name:'听英文选中文',desc:'听英文读音，选出正确的中文意思。'},
  {key:'zhen',ico:'🗣️',name:'听中文选英文',desc:'听中文，选出正确的英文单词。'},
+ {key:'vsay',ico:'💭',name:'看英文说中文',desc:'看英文单词，用嘴说出中文意思。说错的词会显示答案并加入生词本，反复练到全对后，错过的词再打乱练 5 遍。'},
  {key:'spell',ico:'✏️',name:'听音拼写',desc:'听读音，用字母把单词拼出来，拼对后再说出中文意思。拼错会先看正确拼法，再重新默写；拼错的词要连续拼对 5 次才过关。'},
  {key:'fill',ico:'🧱',name:'句子补全',desc:'看句子，选一个单词填进空格。接好 AI 后，句子每天都是新编的。',ex:true},
  {key:'read',ico:'📢',name:'跟读三遍',desc:'每个句子先听，再大声跟读，一共读 3 遍。',ex:true},
@@ -371,7 +371,7 @@ const STEPS=[
  {key:'talk',ico:'💬',name:'每日对话',desc:'用嘴说：先考之前学过的问句，再学 3 个新问句，每句都要会回答、会提问。'}];
 const NEW_ONLY=new Set(['match','venzh','vzhen','enzh','zhen']); // 按遗忘曲线复习的词跳过配对和选择，只做说中文、拼写和句子
 function curveSet(){const d=S.day;return new Set(d.curveIds||d.revIds.filter(id=>S.srs[id]&&!S.srs[id].weak))}
-const GROUPS=[['认单词','🧩',[0,1,2,3]],['听一听','👂',[4,5]],['拼一拼','✏️',[6]],['用句子','📖',[7,8,9,10]],['说一说','💬',[11]]];
+const GROUPS=[['认单词','🧩',[0,1,2]],['听一听','👂',[3,4]],['说中文','💭',[5]],['拼一拼','✏️',[6]],['用句子','📖',[7,8,9,10]],['说一说','💬',[11]]];
 
 const fmt=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 const today=()=>fmt(new Date());
@@ -383,7 +383,7 @@ function mkDeck(id,name,rows){return {id,name,items:rows.map(r=>mkItem(id,...r))
 
 const KEY='doudou-words-v2';
 function fresh(){return {decks:SAMPLE.map(d=>mkDeck(d.id,d.name,d.items)),active:'animals',food:3,stars:0,snd:true,
-  pet:{name:'豆豆',xp:0,hunger:60,t:Date.now(),sp:'leaf'},owned:['plant'],equip:{},roomOff:[],dex:[],badges:{},stepsV:3,pats:{},srs:{},wc:{},day:null,streak:{last:'',n:0},newPerDay:5,maxReview:5,history:[]}}
+  pet:{name:'豆豆',xp:0,hunger:60,t:Date.now(),sp:'leaf'},owned:['plant'],equip:{},roomOff:[],dex:[],badges:{},stepsV:4,pats:{},srs:{},wc:{},day:null,streak:{last:'',n:0},newPerDay:5,maxReview:5,history:[]}}
 let S;
 try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
 if(!S||!S.decks){S=fresh();migrateV1()}
@@ -392,6 +392,7 @@ if(!S.exV){S.exV=1;const ne={};SAMPLE.forEach(d=>d.items.forEach(r=>ne[d.id+'|'+
 if(!S.revV){S.revV=1;S.newPerDay=5;S.maxReview=5;if(S.day&&!S.day.started&&!S.day.done)S.day=null;save()}
 if(!S.stepsV){if(S.day&&S.day.step>=1)S.day.step+=2;S.stepsV=2;save()} // 新增两关后，进行中的进度往后挪
 if(S.stepsV===2){if(S.day&&S.day.step>=2)S.day.step+=1;S.stepsV=3;save()} // 新增「看英文说中文」
+if(S.stepsV===3){if(S.day&&S.day.step>=3&&S.day.step<=5)S.day.step-=1;S.stepsV=4;save()} // 「看英文说中文」挪到「听中文选英文」后面
 function migrateV1(){try{const o=JSON.parse(localStorage.getItem('doudou-words-v1'));if(!o)return;
   if(o.pet)S.pet=o.pet;S.food=o.food||S.food;S.stars=o.stars||0;
   (o.decks||[]).filter(d=>/^d\d/.test(d.id)).forEach(d=>{const words=(d.items||[]).filter(i=>!i.s).map(i=>mkItem(d.id,i.en,i.zh));
@@ -572,32 +573,27 @@ function judgeZhLocal(said,zh){const t=String(said).replace(/[\s，。！？,.!?
     if(M.length>=3){let n=0;for(const c of M)if(T.includes(c))n++;return n/M.length>=.67}return false})}
 async function judgeZh(said,it){if(judgeZhLocal(said,it.zh))return true;if(!aiReady())return false;
   try{const r=await aiJSON(`英文「${it.en}」的中文意思是「${it.zh}」。一个小学生用语音说出了他理解的中文意思，语音识别成文字是：「${said}」（可能有同音字识别错误，要按读音理解）。意思对、意思相近就算对。只回复 JSON：{"ok":true 或 false}`,10000);return !!(r&&r.ok)}catch(e){return false}}
-function zhSayOne(ctx,ui,it,hint){return new Promise(res=>{
-  if(!alive(ctx))return;let tries=0,busy=false,rec=null,txt='';
-  ui.body.innerHTML=`<div class="card prompt"><button class="speaker" id="spk" aria-label="再听一遍">🔊</button>
+function zhSayOne(ctx,ui,it,hint,extraHTML){return new Promise(res=>{
+  if(!alive(ctx))return;let busy=false,rec=null,txt='',over=false;
+  ui.body.innerHTML=`${extraHTML||''}<div class="card prompt"><button class="speaker" id="spk" aria-label="再听一遍">🔊</button>
     <div class="en">${esc(it.en)}</div><div class="hint">${esc(hint||'这个词是什么意思？用嘴说出中文')}</div></div>
     <div class="speakbox" style="margin-top:12px">${srOK?'<button class="mic hold" id="zMic" type="button">按住 说中文</button>':''}
-    <div class="row center" style="margin-top:10px"><button class="btn" id="zPeek" type="button">${srOK?'说完了，直接看答案':'说出来了，看答案'}</button></div>
+    <form class="row" id="zForm" style="flex-wrap:nowrap;margin-top:10px"><input type="text" id="zIn" autocomplete="off" placeholder="${srOK?'说的话会出现在这里，也可以打字':'点这里，用键盘上的 🎤 说中文'}"><button class="btn go">提交</button></form>
     <div id="zFb" class="sayfb" hidden></div></div>`;
   const play=()=>say(it.en);setTimeout(play,150);$('#spk').onclick=play;
-  const fb=$('#zFb'),mic=$('#zMic'),peek=$('#zPeek');
-  const finish=ok=>{if(mic)mic.disabled=true;peek.hidden=true;fb.querySelectorAll('button').forEach(b=>b.disabled=true);
-    if(ok){beep('ok');if(tries===0)good(ctx,fb)}setTimeout(()=>res(ok&&tries===0),ok?1300:400)};
-  const selfCheck=pre=>{fb.hidden=false;fb.className='sayfb';peek.hidden=true;
-    fb.innerHTML=`${pre||''}正确意思：<b>${esc(it.zh)}</b><div class="row center" style="margin-top:8px"><button class="btn small go" id="zY" type="button">✓ 我说对了</button><button class="btn small" id="zN" type="button">✗ 没说对</button></div>`;
-    $('#zY').onclick=()=>{fb.className='sayfb ok';finish(true)};
-    $('#zN').onclick=()=>{tries++;beep('bad');fb.className='sayfb no';fb.innerHTML=`记住：<b>${esc(it.en)}</b> = <b>${esc(it.zh)}</b>`;say(it.en);setTimeout(()=>res(false),1800)}};
-  peek.onclick=()=>{if(busy)return;selfCheck()};
-  const judge=async said=>{busy=true;fb.hidden=false;fb.className='sayfb';fb.textContent='你说的是：'+said+'　正在判断…';
-    const ok=await judgeZh(said,it);if(!alive(ctx))return;busy=false;
-    if(ok){fb.className='sayfb ok';fb.innerHTML=`✓ 对了！你说：${esc(said)}<br>意思：<b>${esc(it.zh)}</b>`;finish(true)}
-    else{tries++;beep('bad');fb.className='sayfb no';
-      fb.innerHTML=`你说的是：${esc(said)}<br>正确意思：<b>${esc(it.zh)}</b><div class="row center" style="margin-top:8px"><button class="btn small" id="zY" type="button">其实我说对了（没听清）</button><button class="btn small sun" id="zNext" type="button">记住了，下一个</button></div>`;
-      $('#zY').onclick=()=>{fb.className='sayfb ok';tries--;finish(true)};$('#zNext').onclick=()=>res(false)}};
+  const fb=$('#zFb'),mic=$('#zMic'),inp=$('#zIn');
+  const lock=()=>{over=true;if(mic)mic.disabled=true;inp.disabled=true;$('#zForm button').disabled=true};
+  const judge=async said=>{if(busy||over)return;busy=true;fb.hidden=false;fb.className='sayfb';fb.textContent='你说的是：'+said+'　正在判断…';
+    const ok=await judgeZh(said,it);if(!alive(ctx))return;busy=false;lock();
+    if(ok){beep('ok');fb.className='sayfb ok';fb.innerHTML=`✓ 对了！你说：${esc(said)}<br>意思：<b>${esc(it.zh)}</b>`;good(ctx,fb);setTimeout(()=>res(true),1300)}
+    else{beep('bad');addToMyWords(it.en,it.zh,it.ex,it.exZh);fb.className='sayfb no';
+      fb.innerHTML=`你说的是：${esc(said)}<br>正确意思：<b>${esc(it.zh)}</b><br><small>已加入生词本</small><div class="row center" style="margin-top:8px"><button class="btn small sun" id="zNext" type="button">记住了，下一个</button></div>`;
+      say(it.en);$('#zNext').onclick=()=>res(false)}};
+  $('#zForm').onsubmit=e=>{e.preventDefault();const v=inp.value.trim();if(v)judge(v)};
   if(mic){
-    const start=e=>{e.preventDefault();if(rec||busy)return;try{speechSynthesis.cancel()}catch(_){}txt='';
-      rec=listen(t=>{txt=t;fb.hidden=false;fb.className='sayfb';fb.textContent='你说的是：'+t},()=>{rec=null;mic.classList.remove('on');mic.textContent='按住 说中文';
-        if(!srOK){mic.hidden=true;peek.textContent='说出来了，看答案';return}
+    const start=e=>{e.preventDefault();if(rec||busy||over)return;try{speechSynthesis.cancel()}catch(_){}txt='';inp.value='';
+      rec=listen(t=>{txt=t;inp.value=t},()=>{rec=null;mic.classList.remove('on');mic.textContent='按住 说中文';
+        if(!srOK){mic.hidden=true;inp.placeholder='点这里，用键盘上的 🎤 说中文';return}
         if(txt.trim())judge(txt.trim());else toast('没听清，再按住说一次')},true,'zh-CN');
       if(rec){mic.classList.add('on');mic.textContent='正在听… 说完松手';beep('pop')}else{mic.hidden=true}};
     const stop=e=>{if(!rec)return;if(e)e.preventDefault();const r=rec;setTimeout(()=>{try{r.stop()}catch(_){}},300);setTimeout(()=>r._finish&&r._finish(),2500)};
@@ -605,6 +601,25 @@ function zhSayOne(ctx,ui,it,hint){return new Promise(res=>{
     mic.addEventListener('contextmenu',e=>e.preventDefault());
   }
 })}
+/* 看英文说中文：全部说一轮 → 错的词反复练到全对 → 所有错过的词每个再练 5 遍（打乱，练错再加一遍） */
+const ZH_N=5;
+async function zhSayStep(ctx,list){
+  let wrong=await zhSayRound(ctx,list,`第 1 轮 · 全部 ${list.length} 个`);if(!alive(ctx))return;
+  wrong.forEach(id=>markMiss(ctx,id));if(!wrong.size)return;
+  const ever=new Set(wrong);let n=1;
+  while(wrong.size){
+    await pause(ctx,`有 ${wrong.size} 个词还没说对`,chips(wrong)+'<p>我们把它们单独再练一次！</p>','错词再练');if(!alive(ctx))return;
+    n++;const sub=list.filter(x=>wrong.has(x.id));wrong=await zhSayRound(ctx,sub,`第 ${n} 轮 · 错词 ${sub.length} 个`);if(!alive(ctx))return;
+  }
+  const words=list.filter(x=>ever.has(x.id));
+  await pause(ctx,'错词都说对啦！',chips(ever)+`<p>这些词每个再练 <b>${ZH_N} 遍</b>，顺序打乱，记得更牢！</p>`,'开始');if(!alive(ctx))return;
+  let q=shuffle(words.flatMap(w=>Array(ZH_N).fill(w)));
+  for(let k=1;k<q.length;k++)if(q[k].id===q[k-1].id){const j=q.findIndex((x,m)=>m>k&&x.id!==q[k].id&&(!q[m+1]||q[m+1].id!==q[k].id));if(j>0)[q[k],q[j]]=[q[j],q[k]]}
+  const total=q.length;let done=0;
+  while(q.length){const it=q.shift();const ui=roundUI(ctx,`错词巩固 · 还剩 ${q.length+1} 次`);ui.prog(done/total);
+    const ok=await zhSayOne(ctx,ui,it);if(!alive(ctx))return;done++;
+    if(!ok){const pos=Math.min(q.length,2+(Math.random()*3|0));q.splice(pos,0,it)}}
+}
 async function zhSayRound(ctx,list,label){
   const ui=roundUI(ctx,label),wrong=new Set(),qs=shuffle(list);
   for(let i=0;i<qs.length;i++){ui.prog(i/qs.length);const ok=await zhSayOne(ctx,ui,qs[i]);if(!alive(ctx))return wrong;if(!ok)wrong.add(qs[i].id)}
@@ -1393,7 +1408,7 @@ function runStep(ctx,step){
   if(!list.length)return Promise.resolve();
   switch(step.key){
     case 'match':return masteryLoop(ctx,list,(l,lab)=>matchRound(ctx,l,lab));
-    case 'vsay':return masteryLoop(ctx,list,(l,lab)=>zhSayRound(ctx,l,lab));
+    case 'vsay':return zhSayStep(ctx,list);
     case 'venzh':case 'vzhen':case 'enzh':case 'zhen':return masteryLoop(ctx,list,(l,lab)=>choiceRound(ctx,l,lab,step.key));
     case 'spell':return spellStep(ctx,list);
     case 'fill':return masteryLoop(ctx,list,(l,lab)=>fillRound(ctx,l,lab));
