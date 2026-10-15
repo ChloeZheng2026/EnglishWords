@@ -286,6 +286,9 @@ rt{ruby-align:center}
 @media (max-width:440px){.ghead h2{font-size:18px}.ghead .chip{font-size:12.5px;padding:3px 8px}.ghead .btn.small{padding:6px 9px}}
 .mic.hold{border-radius:999px;padding:22px 16px;font-size:21px;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:none}
 .mic.hold.on{transform:scale(.97)}
+.sptip{margin-top:10px;font-size:16px;color:var(--ink-soft,#555)} .sptip b{font-family:var(--f-display);font-size:20px;color:var(--coral,#e5533d)}
+.bubble .bzh{display:block;font-size:12px;opacity:.65;font-family:var(--f-zh);margin-top:2px}
+.tag2.w{background:var(--coral-soft);color:#b23b2a}
 .bkmsg{font-size:15px;font-weight:700;color:var(--leaf);min-height:1em}.bkmsg.bad{color:var(--coral)}
 .sline{display:flex;align-items:center;justify-content:center;gap:8px;font-weight:700;margin-bottom:10px}.sdots{display:inline-flex;gap:5px}.sdots i{width:14px;height:14px;border-radius:50%;border:2px solid var(--leaf)}.sdots i.on{background:var(--leaf)}
 .eyes{animation:blink 4.6s infinite;transform-box:fill-box;transform-origin:center}
@@ -356,16 +359,19 @@ const INTERVALS=[1,2,4,7,15]; // 复习间隔（天），连续答对 5 次复�
 const STEPS=[
  {key:'match',ico:'🧩',name:'单词配对',desc:'把英文和中文配成一对。点错的词会单独再练，最后全部再刷一遍。'},
  {key:'venzh',ico:'👀',name:'看英文选中文',desc:'看英文单词，选出正确的中文意思。'},
+ {key:'vsay',ico:'💭',name:'看英文说中文',desc:'看英文单词，用嘴说出中文意思。说错的词会单独再练，最后全部再说一遍。'},
  {key:'vzhen',ico:'🔍',name:'看中文选英文',desc:'看中文，选出正确的英文单词。'},
  {key:'enzh',ico:'👂',name:'听英文选中文',desc:'听英文读音，选出正确的中文意思。'},
  {key:'zhen',ico:'🗣️',name:'听中文选英文',desc:'听中文，选出正确的英文单词。'},
- {key:'spell',ico:'✏️',name:'听音拼写',desc:'听读音，用字母把单词拼出来。拼错的词要连续拼对 5 次才过关。'},
+ {key:'spell',ico:'✏️',name:'听音拼写',desc:'听读音，用字母把单词拼出来，拼对后再说出中文意思。拼错会先看正确拼法，再重新默写；拼错的词要连续拼对 5 次才过关。'},
  {key:'fill',ico:'🧱',name:'句子补全',desc:'看句子，选一个单词填进空格。接好 AI 后，句子每天都是新编的。',ex:true},
  {key:'read',ico:'📢',name:'跟读三遍',desc:'每个句子先听，再大声跟读，一共读 3 遍。',ex:true},
  {key:'build',ico:'🔤',name:'看中文拼句子',desc:'看中文，把打乱的英文单词排成句子。',ex:true},
  {key:'cloze',ico:'📖',name:'完形填空',desc:'把今天的单词填进小短文，全部填对才过关。接好 AI 后，每天是一篇新编的小故事。',ex:true},
  {key:'talk',ico:'💬',name:'每日对话',desc:'用嘴说：先考之前学过的问句，再学 3 个新问句，每句都要会回答、会提问。'}];
-const GROUPS=[['认单词','🧩',[0,1,2]],['听一听','👂',[3,4]],['拼一拼','✏️',[5]],['用句子','📖',[6,7,8,9]],['说一说','💬',[10]]];
+const NEW_ONLY=new Set(['match','venzh','vzhen','enzh','zhen']); // 按遗忘曲线复习的词跳过配对和选择，只做说中文、拼写和句子
+function curveSet(){const d=S.day;return new Set(d.curveIds||d.revIds.filter(id=>S.srs[id]&&!S.srs[id].weak))}
+const GROUPS=[['认单词','🧩',[0,1,2,3]],['听一听','👂',[4,5]],['拼一拼','✏️',[6]],['用句子','📖',[7,8,9,10]],['说一说','💬',[11]]];
 
 const fmt=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 const today=()=>fmt(new Date());
@@ -377,7 +383,7 @@ function mkDeck(id,name,rows){return {id,name,items:rows.map(r=>mkItem(id,...r))
 
 const KEY='doudou-words-v2';
 function fresh(){return {decks:SAMPLE.map(d=>mkDeck(d.id,d.name,d.items)),active:'animals',food:3,stars:0,snd:true,
-  pet:{name:'豆豆',xp:0,hunger:60,t:Date.now(),sp:'leaf'},owned:['plant'],equip:{},roomOff:[],dex:[],badges:{},stepsV:2,pats:{},srs:{},wc:{},day:null,streak:{last:'',n:0},newPerDay:5,maxReview:5,history:[]}}
+  pet:{name:'豆豆',xp:0,hunger:60,t:Date.now(),sp:'leaf'},owned:['plant'],equip:{},roomOff:[],dex:[],badges:{},stepsV:3,pats:{},srs:{},wc:{},day:null,streak:{last:'',n:0},newPerDay:5,maxReview:5,history:[]}}
 let S;
 try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
 if(!S||!S.decks){S=fresh();migrateV1()}
@@ -385,6 +391,7 @@ S.pet.sp=S.pet.sp||'leaf';S.owned=S.owned||['plant'];S.equip=S.equip||{};S.roomO
 if(!S.exV){S.exV=1;const ne={};SAMPLE.forEach(d=>d.items.forEach(r=>ne[d.id+'|'+r[0]]=r));S.decks.forEach(d=>d.items.forEach(it=>{const r=ne[it.id];if(r){it.ex=r[2];it.exZh=r[3]}}));if(S.day&&S.day.gen&&S.day.gen.failed)delete S.day.gen;save()}
 if(!S.revV){S.revV=1;S.newPerDay=5;S.maxReview=5;if(S.day&&!S.day.started&&!S.day.done)S.day=null;save()}
 if(!S.stepsV){if(S.day&&S.day.step>=1)S.day.step+=2;S.stepsV=2;save()} // 新增两关后，进行中的进度往后挪
+if(S.stepsV===2){if(S.day&&S.day.step>=2)S.day.step+=1;S.stepsV=3;save()} // 新增「看英文说中文」
 function migrateV1(){try{const o=JSON.parse(localStorage.getItem('doudou-words-v1'));if(!o)return;
   if(o.pet)S.pet=o.pet;S.food=o.food||S.food;S.stars=o.stars||0;
   (o.decks||[]).filter(d=>/^d\d/.test(d.id)).forEach(d=>{const words=(d.items||[]).filter(i=>!i.s).map(i=>mkItem(d.id,i.en,i.zh));
@@ -401,7 +408,15 @@ const chunk=(a,n)=>{const o=[];for(let i=0;i<a.length;i+=n)o.push(a.slice(i,i+n)
 const deck=()=>S.decks.find(d=>d.id===S.active)||S.decks[0];
 function allItems(){return S.decks.flatMap(d=>d.items)}
 function wordMap(){const m=new Map();allItems().forEach(i=>m.set(i.id,i));return m}
-const blankRe=it=>new RegExp('\\b('+escRe(it.en.trim())+'(?:s|es|ed|d|ing)?)\\b','i');
+const IRR={be:'am|is|are|was|were|been|being',have:'has|had|having',do:'does|did|done|doing',go:'goes|went|gone|going',take:'took|taken',get:'got|gotten|getting',give:'gave|given',make:'made',come:'came',put:'putting',run:'ran|running',keep:'kept',hold:'held',catch:'catches|caught',think:'thought',grow:'grew|grown',break:'broke|broken',fall:'fell|fallen',bring:'brought',set:'setting',pay:'paid',find:'found',stand:'stood',hear:'heard',feel:'felt',leave:'left',lose:'lost',see:'saw|seen',say:'said',tell:'told',write:'wrote|written',speak:'spoke|spoken',cut:'cutting',let:'letting',sit:'sat|sitting',wake:'woke|woken',throw:'threw|thrown',send:'sent',spend:'spent',deal:'dealt',lead:'led',become:'became',begin:'began|begun|beginning',fight:'fought',sell:'sold',stick:'stuck',build:'built',hit:'hitting',shut:'shutting',show:'shown',drop:'dropped|dropping',stop:'stopped|stopping',plan:'planned|planning',figure:'figuring'};
+/* 单词和短语的挖空规则：词尾可以加 s/ed/ing；短语的第一个词可以变形（take care of → took care of），one's / oneself 可以换成 my / herself 等 */
+function phraseRe(en){const w=en.trim().split(/\s+/);if(w.length===1)return escRe(w[0])+'(?:s|es|ed|d|ing)?';
+  const v=w[0].toLowerCase(),e=escRe(w[0]);let alt=[e+'(?:s|es|ed|d|ing)?'];
+  if(/e$/.test(v))alt.push(escRe(w[0].slice(0,-1))+'ing');if(/[^aeiou]y$/.test(v))alt.push(escRe(w[0].slice(0,-1))+'(?:ies|ied)');if(IRR[v])alt.push(IRR[v]);
+  const rest=w.slice(1).map((x,k)=>{const l=x.toLowerCase();if(l==="one's")return "(?:my|your|his|her|its|our|their|one's)";if(l==='oneself')return '(?:myself|yourself|himself|herself|itself|ourselves|yourselves|themselves|oneself)';
+    return escRe(x)+(k===w.length-2?'(?:s|es)?':'')});
+  return '(?:'+alt.join('|')+')\\s+'+rest.join('\\s+')}
+const blankRe=it=>new RegExp('\\b('+phraseRe(it.en)+')\\b','i');
 const hasEx=it=>!!(it.ex&&blankRe(it).test(it.ex));
 
 let voices=[];
@@ -425,12 +440,20 @@ function reward(el,n=1){S.food+=n;S.stars+=n;save();hud();if(el)floatAt(el,'+'+n
 function hud(){$('#food').textContent=S.food;$('#streak').textContent=S.streak.n;$('#deckName').textContent=deck()?'· '+deck().name:'';$('#sndBtn').textContent=S.snd?'🔊':'🔇';$('#libBtn').classList.toggle('on',tab==='decks');$('#tabPrac').hidden=!S.showPractice}
 
 /* ================= daily plan ================= */
+const WEAK_MAX=10; // 「不会的词」（巩固中 + 今天的新词）最多 10 个
+const weakCount=()=>Object.values(S.srs).filter(r=>r.weak&&!r.mastered&&!r.moved).length;
+const newQuota=()=>Math.max(0,Math.min(S.newPerDay,WEAK_MAX-weakCount()));
 function buildDay(force){
   const t=today();if(!force&&S.day&&S.day.date===t)return;
+  /* 之前开始了但没做完：不清空，带到今天接着做 */
+  if(!force&&S.day&&!S.day.done&&S.day.started&&S.day.date<t&&dayItems().length){S.day.from=S.day.from||S.day.date;S.day.date=t;save();return}
   const map=wordMap();
-  const rev=Object.entries(S.srs).filter(([id,r])=>!r.mastered&&!r.moved&&r.due<=t&&map.has(id))
-    .sort((a,b)=>a[1].due<b[1].due?-1:a[1].due>b[1].due?1:0).slice(0,S.maxReview||5).map(e=>e[0]);
-  S.day={date:t,newIds:nextNew(S.newPerDay),revIds:rev,step:0,missed:{},started:false,done:false,...patPlan()};save();
+  const due=Object.entries(S.srs).filter(([id,r])=>!r.mastered&&!r.moved&&r.due<=t&&map.has(id))
+    .sort((a,b)=>a[1].due<b[1].due?-1:a[1].due>b[1].due?1:0);
+  /* 出过错的词（巩固中）每天都复习，排在最前面，不受复习数量限制（最多 10 个）；其余按遗忘曲线补满 */
+  const weak=due.filter(e=>e[1].weak).slice(0,10),rest=due.filter(e=>!e[1].weak).slice(0,Math.max(0,(S.maxReview||5)-weak.length));
+  const rev=weak.concat(rest).map(e=>e[0]);
+  S.day={date:t,newIds:nextNew(newQuota()),revIds:rev,curveIds:rest.map(e=>e[0]),step:0,missed:{},started:false,done:false,...patPlan()};save();
 }
 /* 新词顺序：生词本最多 2 个 → 使用中的词库（包括新加进去的词）→ 生词本剩下的 → 其他词库。学过的同一个单词不重复学 */
 function nextNew(n){const d=deck(),my=myDeck();const unl=dk=>dk?dk.items.filter(it=>!S.srs[it.id]):[];
@@ -542,6 +565,51 @@ function choiceRound(ctx,list,label,mode){return new Promise(res=>{
   q();
 })}
 
+/* --- 看英文说中文：按住说中文，自动判断；用不了语音就自己说完看答案 --- */
+function zhParts(zh){return String(zh).replace(/\b[a-z]{1,5}\.\s*/gi,'').replace(/[（(][^）)]*[）)]/g,'').split(/[；;，,、\/]|或/).map(x=>x.replace(/[…\s.]/g,'').replace(/^(使|被)/,'').replace(/[的地得]$/,'')).filter(Boolean)}
+function judgeZhLocal(said,zh){const t=String(said).replace(/[\s，。！？,.!?、]/g,'');if(!t)return false;const T=t.replace(/[的地得了呀啊吧呢]/g,'');
+  return zhParts(zh).some(m=>{const M=m.replace(/[的地得了]/g,'');if(!M)return false;if(T.includes(M)||(T.length>=2&&M.includes(T)))return true;
+    if(M.length>=3){let n=0;for(const c of M)if(T.includes(c))n++;return n/M.length>=.67}return false})}
+async function judgeZh(said,it){if(judgeZhLocal(said,it.zh))return true;if(!aiReady())return false;
+  try{const r=await aiJSON(`英文「${it.en}」的中文意思是「${it.zh}」。一个小学生用语音说出了他理解的中文意思，语音识别成文字是：「${said}」（可能有同音字识别错误，要按读音理解）。意思对、意思相近就算对。只回复 JSON：{"ok":true 或 false}`,10000);return !!(r&&r.ok)}catch(e){return false}}
+function zhSayOne(ctx,ui,it,hint){return new Promise(res=>{
+  if(!alive(ctx))return;let tries=0,busy=false,rec=null,txt='';
+  ui.body.innerHTML=`<div class="card prompt"><button class="speaker" id="spk" aria-label="再听一遍">🔊</button>
+    <div class="en">${esc(it.en)}</div><div class="hint">${esc(hint||'这个词是什么意思？用嘴说出中文')}</div></div>
+    <div class="speakbox" style="margin-top:12px">${srOK?'<button class="mic hold" id="zMic" type="button">按住 说中文</button>':''}
+    <div class="row center" style="margin-top:10px"><button class="btn" id="zPeek" type="button">${srOK?'说完了，直接看答案':'说出来了，看答案'}</button></div>
+    <div id="zFb" class="sayfb" hidden></div></div>`;
+  const play=()=>say(it.en);setTimeout(play,150);$('#spk').onclick=play;
+  const fb=$('#zFb'),mic=$('#zMic'),peek=$('#zPeek');
+  const finish=ok=>{if(mic)mic.disabled=true;peek.hidden=true;fb.querySelectorAll('button').forEach(b=>b.disabled=true);
+    if(ok){beep('ok');if(tries===0)good(ctx,fb)}setTimeout(()=>res(ok&&tries===0),ok?1300:400)};
+  const selfCheck=pre=>{fb.hidden=false;fb.className='sayfb';peek.hidden=true;
+    fb.innerHTML=`${pre||''}正确意思：<b>${esc(it.zh)}</b><div class="row center" style="margin-top:8px"><button class="btn small go" id="zY" type="button">✓ 我说对了</button><button class="btn small" id="zN" type="button">✗ 没说对</button></div>`;
+    $('#zY').onclick=()=>{fb.className='sayfb ok';finish(true)};
+    $('#zN').onclick=()=>{tries++;beep('bad');fb.className='sayfb no';fb.innerHTML=`记住：<b>${esc(it.en)}</b> = <b>${esc(it.zh)}</b>`;say(it.en);setTimeout(()=>res(false),1800)}};
+  peek.onclick=()=>{if(busy)return;selfCheck()};
+  const judge=async said=>{busy=true;fb.hidden=false;fb.className='sayfb';fb.textContent='你说的是：'+said+'　正在判断…';
+    const ok=await judgeZh(said,it);if(!alive(ctx))return;busy=false;
+    if(ok){fb.className='sayfb ok';fb.innerHTML=`✓ 对了！你说：${esc(said)}<br>意思：<b>${esc(it.zh)}</b>`;finish(true)}
+    else{tries++;beep('bad');fb.className='sayfb no';
+      fb.innerHTML=`你说的是：${esc(said)}<br>正确意思：<b>${esc(it.zh)}</b><div class="row center" style="margin-top:8px"><button class="btn small" id="zY" type="button">其实我说对了（没听清）</button><button class="btn small sun" id="zNext" type="button">记住了，下一个</button></div>`;
+      $('#zY').onclick=()=>{fb.className='sayfb ok';tries--;finish(true)};$('#zNext').onclick=()=>res(false)}};
+  if(mic){
+    const start=e=>{e.preventDefault();if(rec||busy)return;try{speechSynthesis.cancel()}catch(_){}txt='';
+      rec=listen(t=>{txt=t;fb.hidden=false;fb.className='sayfb';fb.textContent='你说的是：'+t},()=>{rec=null;mic.classList.remove('on');mic.textContent='按住 说中文';
+        if(!srOK){mic.hidden=true;peek.textContent='说出来了，看答案';return}
+        if(txt.trim())judge(txt.trim());else toast('没听清，再按住说一次')},true,'zh-CN');
+      if(rec){mic.classList.add('on');mic.textContent='正在听… 说完松手';beep('pop')}else{mic.hidden=true}};
+    const stop=e=>{if(!rec)return;if(e)e.preventDefault();const r=rec;setTimeout(()=>{try{r.stop()}catch(_){}},300);setTimeout(()=>r._finish&&r._finish(),2500)};
+    mic.addEventListener('pointerdown',start);mic.addEventListener('pointerup',stop);mic.addEventListener('pointercancel',stop);mic.addEventListener('pointerleave',stop);
+    mic.addEventListener('contextmenu',e=>e.preventDefault());
+  }
+})}
+async function zhSayRound(ctx,list,label){
+  const ui=roundUI(ctx,label),wrong=new Set(),qs=shuffle(list);
+  for(let i=0;i<qs.length;i++){ui.prog(i/qs.length);const ok=await zhSayOne(ctx,ui,qs[i]);if(!alive(ctx))return wrong;if(!ok)wrong.add(qs[i].id)}
+  return wrong}
+
 /* --- 听音拼写 --- */
 /* 听音拼写一个词：返回是否第一次就拼对；错两次显示答案 */
 function spellOne(ctx,ui,it,extraHTML){return new Promise(res=>{
@@ -551,7 +619,7 @@ function spellOne(ctx,ui,it,extraHTML){return new Promise(res=>{
   const tiles=shuffle(need.concat(extra));let filled=[],tries=0,busy=false;
   ui.body.innerHTML=`${extraHTML||''}<div class="card prompt"><button class="speaker" id="spk" aria-label="再听一遍">🔊</button>
     <div class="hint">听读音，拼出这个单词 · ${need.length} 个字母</div><button class="linkbtn" id="zhh">看中文提示</button><div class="reveal" id="zhv" hidden style="font-family:var(--f-zh)">${esc(it.zh)}</div>
-    <div class="slots" id="slots" style="margin-top:14px"></div></div>
+    <div class="slots" id="slots" style="margin-top:14px"></div><div class="sptip" id="spTip" hidden></div></div>
     <div class="letters">${tiles.map((c,k)=>`<button class="letter" data-k="${k}">${esc(c)}</button>`).join('')}</div>
     <div class="row center" style="margin-top:16px"><button class="btn" id="back">⌫ 退格</button></div>`;
   const play=()=>say(it.en);setTimeout(play,150);$('#spk').onclick=play;
@@ -567,20 +635,23 @@ function spellOne(ctx,ui,it,extraHTML){return new Promise(res=>{
     busy=true;
     if(filled.map(f=>f.c).join('')===need.join('')){draw('right');beep('ok');say(it.en);if(tries===0)good(ctx,$('#slots'));setTimeout(()=>res(tries===0),1100)}
     else{tries++;beep('bad');$('#slots').classList.add('bad');
-      setTimeout(()=>{$('#slots').classList.remove('bad');
-        if(tries>=2){filled=need.map(c=>({c}));draw('reveal-ans');$('#zhv').hidden=false;say(it.en);toast('正确拼法：'+it.en);setTimeout(()=>res(false),2400)}
-        else{filled.forEach(f=>f.b.classList.remove('used'));filled=[];draw();busy=false;toast('不对哦，再听一遍，再拼一次');play()}},500)}
+      /* 拼错：先显示正确拼法和中文，记一记，再盖住重新默写，直到拼对 */
+      setTimeout(()=>{$('#slots').classList.remove('bad');filled.forEach(f=>f.b&&f.b.classList.remove('used'));
+        filled=need.map(c=>({c}));draw('reveal-ans');$('#zhv').hidden=false;$('#zhh').hidden=true;say(it.en);
+        const tip=$('#spTip');tip.hidden=false;tip.innerHTML=`正确拼法：<b>${esc(it.en)}</b>，记住它，马上盖住重新默写`;
+        setTimeout(()=>{if(!alive(ctx))return;filled=[];draw();$('#zhv').hidden=true;$('#zhh').hidden=false;tip.innerHTML='凭记忆再默写一遍';busy=false;play()},2800)},500)}
   }
 })}
-async function spellRound(ctx,list,label){
+async function spellRound(ctx,list,label,withZh){
   const ui=roundUI(ctx,label),wrong=new Set(),qs=shuffle(list);
-  for(let i=0;i<qs.length;i++){ui.prog(i/qs.length);const ok=await spellOne(ctx,ui,qs[i]);if(!alive(ctx))return wrong;if(!ok)wrong.add(qs[i].id)}
+  for(let i=0;i<qs.length;i++){ui.prog(i/qs.length);const ok=await spellOne(ctx,ui,qs[i]);if(!alive(ctx))return wrong;if(!ok)wrong.add(qs[i].id);
+    if(withZh){keyH=null;const zok=await zhSayOne(ctx,ui,qs[i],'拼对啦！它是什么意思？说出中文');if(!alive(ctx))return wrong;if(!zok)markMiss(ctx,qs[i].id)}}
   keyH=null;return wrong;
 }
 /* 听音拼写：先全部拼一轮；拼错的词轮流再拼，每个词要连续拼对 5 次才过关，中间拼错就重新数 */
 const SPELL_N=5;
 async function spellStep(ctx,list){
-  const wrong=await spellRound(ctx,list,`第 1 轮 · 全部 ${list.length} 个`);if(!alive(ctx))return;
+  const wrong=await spellRound(ctx,list,`第 1 轮 · 全部 ${list.length} 个`,true);if(!alive(ctx))return;
   wrong.forEach(id=>markMiss(ctx,id));if(!wrong.size)return;
   const queue=list.filter(x=>wrong.has(x.id)),cnt={};queue.forEach(x=>cnt[x.id]=0);
   await pause(ctx,`有 ${queue.length} 个词拼错了`,chips(wrong)+`<p>这些词每个都要<b>连续拼对 ${SPELL_N} 次</b>才过关，中间拼错就重新数。加油！</p>`,'开始强化');if(!alive(ctx))return;
@@ -602,9 +673,9 @@ function splitBlank(it){const m=it.ex.match(blankRe(it));return {form:m[1],befor
 /* 句子补全的干扰项：优先用 AI 给的「放进去一定不通」的词，否则用别的主题词库里的词，避免几个选项都说得通 */
 function fillDistract(it){
   const seen=new Set([it.en.toLowerCase()]),out=[];
-  for(const w of (it.wrong||[])){const v=String(w||'').trim();if(v&&!seen.has(v.toLowerCase())&&v.split(' ').length<=2){seen.add(v.toLowerCase());out.push({en:v,id:'w'+v})}if(out.length>=3)return out}
-  const dk=it.id.split('|')[0];
-  for(const x of shuffle(allItems().filter(x=>x.id.split('|')[0]!==dk)).concat(shuffle(allItems()))){const v=x.en.toLowerCase();if(!seen.has(v)){seen.add(v);out.push(x)}if(out.length>=3)break}
+  for(const w of (it.wrong||[])){const v=String(w||'').trim();if(v&&!seen.has(v.toLowerCase())&&v.split(' ').length<=5){seen.add(v.toLowerCase());out.push({en:v,id:'w'+v})}if(out.length>=3)return out}
+  const dk=it.id.split('|')[0],ph=it.en.trim().includes(' ');const pool=allItems().filter(x=>x.en.trim().includes(' ')===ph);
+  for(const x of (ph&&pool.length>8?shuffle(pool.filter(x=>!x.ex||x.ex!==it.ex)):shuffle(allItems().filter(x=>x.id.split('|')[0]!==dk))).concat(shuffle(allItems()))){const v=x.en.toLowerCase();if(!seen.has(v)){seen.add(v);out.push(x)}if(out.length>=3)break}
   return out}
 function fillRound(ctx,list,label){return new Promise(res=>{
   const ui=roundUI(ctx,label),wrong=new Set(),qs=shuffle(list);let i=0;
@@ -675,7 +746,8 @@ function clozeRound(ctx,list,story){return new Promise(res=>{
   const blanks=story?story.blanks.map(b=>({...b,val:null,vj:null,state:''})):shuffle(list).map((it,k)=>{const sp=splitBlank(it);return {it,...sp,before:(k?' ':'')+sp.before,val:null,vj:null,state:''}});
   const ui=roundUI(ctx,`短文里有 ${blanks.length} 个空`);
   const used=new Set(list.map(i=>i.en.toLowerCase())),dis=[];
-  for(const x of shuffle(allItems())){const v=x.en.toLowerCase();if(!used.has(v)){used.add(v);dis.push(x.en)}if(dis.length>=(list.length>=3?2:1))break}
+  const phN=list.filter(i=>i.en.trim().includes(' ')).length,pref=x=>x.en.trim().includes(' ')===(phN*2>=list.length);
+  for(const x of shuffle(allItems()).sort((a,b)=>pref(b)-pref(a))){const v=x.en.toLowerCase();if(!used.has(v)){used.add(v);dis.push(x.en)}if(dis.length>=(list.length>=3?2:1))break}
   const bank=shuffle(blanks.map(b=>b.it.en).concat(dis));
   function draw(){
     if(!alive(ctx))return;
@@ -850,10 +922,10 @@ const IOS_SAFARI=IOS&&/Safari\//.test(UA)&&!/CriOS|FxiOS|EdgiOS|MQQBrowser|QQ\/|
 let srOK=!!SRC&&location.protocol!=='file:'&&(!IOS||IOS_SAFARI);
 try{if(localStorage.getItem('doudou-sr-off'))srOK=false}catch(e){}
 function srFail(){if(!srOK)return;srOK=false;try{localStorage.setItem('doudou-sr-off','1')}catch(e){}toast('这里的语音按钮用不了，请点输入框，用键盘上的 🎤 说话')}
-function listen(onText,onEnd,hold){
+function listen(onText,onEnd,hold,lang){
   if(!srOK)return null;let got=false,alive=false,done=false,wd;
   const finish=()=>{if(done)return;done=true;clearTimeout(wd);onEnd(got)};
-  try{const r=new SRC();r.lang='en-US';r.interimResults=true;r.maxAlternatives=1;if(hold)r.continuous=true;
+  try{const r=new SRC();r.lang=lang||'en-US';r.interimResults=true;r.maxAlternatives=1;if(hold)r.continuous=true;
     r.onstart=r.onaudiostart=()=>{alive=true};
     r.onresult=e=>{got=true;alive=true;let t='';for(const x of e.results)t+=x[0].transcript;onText(t)};
     r.onerror=e=>{if(['not-allowed','service-not-allowed','audio-capture'].includes(e.error))srFail();finish()};
@@ -963,9 +1035,9 @@ async function ensureGen(ctx){
     const r=await Promise.race([skipP.then(()=>{throw {code:'skipped'}}),aiJSON(`你在帮中国小学生（6-10 岁）复习英语单词。今天的单词：
 ${items.map(i=>`${i.en}（${i.zh}）`).join('\n')}
 请完成两件事：
-1. 给每个单词写一个新的简单英文句子：5-9 个词，只用小学低年级常见词汇；句子里必须原样出现这个单词（名词可以用复数），不要换成别的词形；附中文翻译。
+1. 给每个单词写一个新的简单英文句子：5-9 个词，只用小学低年级常见词汇；句子里必须原样出现这个单词（名词可以用复数），不要换成别的词形；如果是短语或固定搭配（比如 look forward to），句子里要完整出现这个短语，只有第一个动词可以变形（took care of），one's 可以换成 my/his 等；附中文翻译。
    这些句子要拿来做填空题：把这个单词挖掉后，句子里必须有明确的线索，让孩子只能填这一个词（比如 The panda eats bamboo. / The cat says meow.），不能是 The ___ is under the table. 这种填什么都通的句子。
-   再给每个句子 3 个干扰词 wrong：小学生认识的英文单词，但放进空里明显不对、读不通。不要和这些已有句子重复：${items.map(i=>i.ex).filter(Boolean).join(' / ')||'无'}
+   再给每个句子 3 个干扰词 wrong：小学生认识的英文单词，但放进空里明显不对、读不通；如果是短语，干扰项也给短语。不要和这些已有句子重复：${items.map(i=>i.ex).filter(Boolean).join(' / ')||'无'}
 2. 用上面全部单词编一个连贯、有趣的小短文：40-80 个词，适合小学生读；每个单词至少原样出现一次（名词可以用复数）；附中文翻译。
    短文是完形填空：这些单词会被挖掉，所以每个单词所在的地方都要有明确线索，让孩子能判断只能填哪一个（比如 a panda eating bamboo、a rabbit with long ears），不要写成 a cat and a dog 这种可以互换的。
 只回复 JSON：{"sentences":[{"en":"单词","ex":"英文句子","zh":"中文翻译","wrong":["干扰词1","干扰词2","干扰词3"]}],"story":"英文短文","storyZh":"短文的中文翻译"}`,45000)]);
@@ -1080,12 +1152,238 @@ function importKetWords(){
 function importKetTalk(){return addDialogs(KET_TALK.map(([t,q,a])=>({t:'KET·'+t,q,a})))}
 const MID_WORDS='ability=n. 能力;able=adj. 能够的;abroad=adv. 在国外;absent=adj. 缺席的;accept=v. 接受;accident=n. 事故;achieve=v. 实现;across=prep. 穿过;action=n. 行动;active=adj. 积极的;activity=n. 活动;actually=adv. 实际上;add=v. 添加;advantage=n. 优点;adventure=n. 冒险;advice=n. 建议;advise=v. 建议;afford=v. 负担得起;against=prep. 反对；靠着;agree=v. 同意;ahead=adv. 在前面;aim=n. 目标;allow=v. 允许;almost=adv. 几乎;alone=adv. 独自;along=prep. 沿着;aloud=adv. 大声地;amazing=adj. 令人惊奇的;among=prep. 在…之中;ancient=adj. 古代的;announce=v. 宣布;another=pron. 另一个;anxious=adj. 焦虑的;anyway=adv. 无论如何;appear=v. 出现;area=n. 地区;argue=v. 争论;army=n. 军队;arrange=v. 安排;article=n. 文章;asleep=adj. 睡着的;attend=v. 参加;attention=n. 注意;attitude=n. 态度;attract=v. 吸引;avoid=v. 避免;award=n. 奖;aware=adj. 意识到的;balance=n. 平衡;basic=adj. 基本的;battle=n. 战斗;beat=v. 打败;become=v. 变成;behave=v. 表现;behaviour=n. 行为;behind=prep. 在…后面;believe=v. 相信;belong=v. 属于;below=prep. 在…下面;beside=prep. 在…旁边;besides=adv. 此外;beyond=prep. 超出;bill=n. 账单;blind=adj. 盲的;block=n. 街区;borrow=v. 借入;both=pron. 两者都;bottom=n. 底部;brain=n. 大脑;branch=n. 树枝；分支;breath=n. 呼吸;breathe=v. 呼吸;bright=adj. 明亮的;brilliant=adj. 杰出的;broken=adj. 坏了的;build=v. 建造;burn=v. 燃烧;business=n. 生意;calm=adj. 平静的;care=v. 关心;careful=adj. 小心的;careless=adj. 粗心的;cause=v. 导致;celebrate=v. 庆祝;century=n. 世纪;certain=adj. 确定的;challenge=n. 挑战;chance=n. 机会;character=n. 性格；角色;cheer=v. 欢呼;choice=n. 选择;citizen=n. 公民;coast=n. 海岸;communicate=v. 交流;community=n. 社区;compare=v. 比较;complete=v. 完成;condition=n. 条件；状况;confident=adj. 自信的;connect=v. 连接;consider=v. 考虑;contain=v. 包含;continue=v. 继续;control=v. 控制;conversation=n. 对话;copy=v. 复制;correct=adj. 正确的;couple=n. 一对;courage=n. 勇气;course=n. 课程;cover=v. 覆盖;create=v. 创造;crowd=n. 人群;crowded=adj. 拥挤的;culture=n. 文化;cure=v. 治愈;curious=adj. 好奇的;custom=n. 习俗;damage=v. 损坏;danger=n. 危险;deal=v. 处理;decide=v. 决定;decision=n. 决定;deep=adj. 深的;degree=n. 度；学位;describe=v. 描述;design=v. 设计;develop=v. 发展;die=v. 死;diet=n. 饮食;difference=n. 差别;direction=n. 方向;disagree=v. 不同意;disappear=v. 消失;discover=v. 发现;discuss=v. 讨论;disease=n. 疾病;divide=v. 分开;double=adj. 两倍的;dream=n. 梦想;drop=v. 掉落;during=prep. 在…期间;duty=n. 责任;each=pron. 每个;edge=n. 边缘;education=n. 教育;effect=n. 影响;effort=n. 努力;either=adv. 也（用于否定）;electric=adj. 电的;else=adv. 其他;encourage=v. 鼓励;energy=n. 能量;enemy=n. 敌人;enough=adj. 足够的;enter=v. 进入;especially=adv. 尤其;event=n. 事件;everyday=adj. 日常的;exactly=adv. 确切地;examine=v. 检查;example=n. 例子;excellent=adj. 优秀的;except=prep. 除了;exchange=v. 交换;excuse=n. 借口;exist=v. 存在;expect=v. 期望;experience=n. 经验；经历;experiment=n. 实验;expert=n. 专家;explain=v. 解释;explore=v. 探索;express=v. 表达;fact=n. 事实;fail=v. 失败;fair=adj. 公平的;fall=v. 落下;familiar=adj. 熟悉的;fear=n. 恐惧;festival=n. 节日;fight=v. 打架；斗争;fill=v. 填满;final=adj. 最后的;finally=adv. 最后;fit=v. 适合;fix=v. 修理;flight=n. 航班;follow=v. 跟随;foreign=adj. 外国的;forever=adv. 永远;forgive=v. 原谅;form=n. 形式;fortune=n. 运气；财富;freedom=n. 自由;fresh=adj. 新鲜的;friendship=n. 友谊;frighten=v. 使惊吓;further=adv. 更远；进一步;future=n. 未来;gain=v. 获得;general=adj. 一般的;gentle=adj. 温和的;government=n. 政府;grade=n. 年级；成绩;graduate=v. 毕业;ground=n. 地面;grow=v. 生长;guess=v. 猜;guide=n. 导游；向导;habit=n. 习惯;hang=v. 悬挂;happen=v. 发生;hardly=adv. 几乎不;harm=n. 伤害;health=n. 健康;hear=v. 听见;heart=n. 心;heat=n. 热;height=n. 高度;hero=n. 英雄;hide=v. 躲藏;hold=v. 拿着；举行;honest=adj. 诚实的;honour=n. 荣誉;however=adv. 然而;huge=adj. 巨大的;human=n. 人类;humour=n. 幽默;hurry=v. 匆忙;idea=n. 主意;imagine=v. 想象;improve=v. 提高;include=v. 包括;increase=v. 增加;independent=adj. 独立的;influence=n. 影响;information=n. 信息;instead=adv. 代替;instruction=n. 说明；指示;intelligent=adj. 聪明的;introduce=v. 介绍;invent=v. 发明;invitation=n. 邀请;invite=v. 邀请;join=v. 加入;joke=n. 笑话;judge=v. 判断;knowledge=n. 知识;lack=n. 缺乏;land=n. 陆地;language=n. 语言;last=v. 持续;laughter=n. 笑声;law=n. 法律;lead=v. 带领;leader=n. 领导者;least=adv. 最少;lend=v. 借出;less=adv. 更少;level=n. 水平;lie=v. 躺；说谎;life=n. 生活；生命;lift=v. 举起;likely=adj. 可能的;limit=n. 限制;local=adj. 当地的;loss=n. 损失;lucky=adj. 幸运的;main=adj. 主要的;manage=v. 设法；管理;manner=n. 方式；礼貌;mark=n. 分数；记号;marry=v. 结婚;material=n. 材料;matter=v. 要紧;mean=v. 意思是;meaning=n. 意义;measure=v. 测量;member=n. 成员;memory=n. 记忆;mention=v. 提到;method=n. 方法;middle=n. 中间;mind=n. 头脑;miss=v. 想念；错过;mix=v. 混合;modern=adj. 现代的;moment=n. 片刻;national=adj. 国家的;natural=adj. 自然的;nearly=adv. 几乎;necessary=adj. 必要的;neither=pron. 两者都不;noise=n. 噪音;normal=adj. 正常的;notice=v. 注意到;object=n. 物体;offer=v. 提供;opinion=n. 观点;order=n. 顺序；命令;ordinary=adj. 普通的;organize=v. 组织;own=adj. 自己的;pair=n. 一双;part=n. 部分;particular=adj. 特别的;pass=v. 通过；传递;past=n. 过去;patient=adj. 耐心的;peace=n. 和平;perfect=adj. 完美的;perhaps=adv. 也许;period=n. 时期;person=n. 人;personal=adj. 个人的;pick=v. 挑选；捡;piece=n. 一片；一块;plan=n. 计划;pleasure=n. 乐趣;plenty=n. 大量;point=n. 观点；点;pollution=n. 污染;popular=adj. 受欢迎的;population=n. 人口;position=n. 位置;positive=adj. 积极的;power=n. 力量;prefer=v. 更喜欢;prepare=v. 准备;pretty=adv. 相当;prevent=v. 阻止;pride=n. 骄傲;prize=n. 奖品;probably=adv. 可能;problem=n. 问题;produce=v. 生产;progress=n. 进步;promise=v. 承诺;protect=v. 保护;proud=adj. 自豪的;prove=v. 证明;provide=v. 提供;public=adj. 公共的;pull=v. 拉;purpose=n. 目的;push=v. 推;quality=n. 质量;quarter=n. 四分之一;quite=adv. 相当;raise=v. 举起；筹集;rather=adv. 相当；宁愿;reach=v. 到达;reason=n. 原因;receive=v. 收到;recent=adj. 最近的;record=n. 记录;reduce=v. 减少;refuse=v. 拒绝;regard=v. 把…看作;relax=v. 放松;remain=v. 保持；剩下;repair=v. 修理;repeat=v. 重复;reply=v. 回复;report=n. 报告;require=v. 需要;research=n. 研究;respect=v. 尊重;responsible=adj. 负责的;result=n. 结果;return=v. 返回;review=v. 复习;rich=adj. 富有的;rule=n. 规则;satisfy=v. 使满意;save=v. 拯救；节省;scared=adj. 害怕的;search=v. 搜索;secret=n. 秘密;seem=v. 似乎;select=v. 选择;sense=n. 感觉；意义;separate=adj. 分开的;serious=adj. 严重的；认真的;serve=v. 服务;service=n. 服务;set=v. 设置;several=adj. 几个;shake=v. 摇动;share=v. 分享;shout=v. 喊叫;sign=n. 标志;silent=adj. 沉默的;similar=adj. 相似的;simple=adj. 简单的;since=prep. 自从;situation=n. 情况;skill=n. 技能;society=n. 社会;solve=v. 解决;someone=pron. 某人;space=n. 空间；太空;spend=v. 花费;spirit=n. 精神;spread=v. 传播;state=n. 状态；州;stay=v. 停留;step=n. 步骤;stick=v. 坚持；粘贴;story=n. 故事;stress=n. 压力;succeed=v. 成功;success=n. 成功;successful=adj. 成功的;suddenly=adv. 突然;suggest=v. 建议;suggestion=n. 建议;support=v. 支持;suppose=v. 假设;sure=adj. 确定的;surface=n. 表面;surprise=n. 惊喜;survive=v. 幸存;system=n. 系统;task=n. 任务;taste=n. 味道；v. 尝;teach=v. 教;tear=n. 眼泪;terrible=adj. 可怕的;thought=n. 想法;through=prep. 穿过;throughout=prep. 遍及;tidy=adj. 整洁的;tip=n. 提示；小费;tool=n. 工具;total=adj. 总的;touch=v. 触摸;tradition=n. 传统;traditional=adj. 传统的;treat=v. 对待;trouble=n. 麻烦;trust=v. 信任;truth=n. 真相;type=n. 类型;unless=conj. 除非;until=conj. 直到;upset=adj. 心烦的;useful=adj. 有用的;value=n. 价值;various=adj. 各种各样的;voice=n. 声音;volunteer=n. 志愿者;waste=v. 浪费;way=n. 方法；道路;whether=conj. 是否;while=conj. 当…时;whole=adj. 整个的;wide=adj. 宽的;wish=n. 愿望；v. 希望;within=prep. 在…之内;without=prep. 没有;wonder=v. 想知道;world=n. 世界;worry=v. 担心;worth=adj. 值得的;yet=adv. 还；已经;youth=n. 青春';
 const HIGH_WORDS='abandon=v. 放弃；抛弃;absence=n. 缺席;absolute=adj. 绝对的;absorb=v. 吸收;abstract=adj. 抽象的;abuse=v. 滥用;academic=adj. 学术的;access=n. 通道；使用权;accompany=v. 陪伴;accomplish=v. 完成;account=n. 账户；解释;accurate=adj. 准确的;accuse=v. 指控;acknowledge=v. 承认;acquire=v. 获得;adapt=v. 适应;adequate=adj. 足够的;adjust=v. 调整;admire=v. 钦佩;admit=v. 承认;adopt=v. 采用；收养;advance=v. 前进;advanced=adj. 先进的;advertise=v. 做广告;affect=v. 影响;aggressive=adj. 好斗的；积极进取的;alarm=n. 警报;alternative=n. 可供选择的事物;amateur=adj. 业余的;ambition=n. 雄心;amount=n. 数量;analyse=v. 分析;anniversary=n. 周年纪念日;annual=adj. 每年的;anticipate=v. 预期;apparent=adj. 明显的;appeal=v. 呼吁；吸引;applicant=n. 申请人;apply=v. 申请；应用;appoint=v. 任命;appreciate=v. 欣赏；感激;approach=n. 方法；v. 接近;appropriate=adj. 恰当的;approve=v. 批准;approximately=adv. 大约;arise=v. 出现;assess=v. 评估;assist=v. 协助;associate=v. 联系;assume=v. 假定;atmosphere=n. 大气；气氛;attach=v. 附上;attempt=n. 尝试;attraction=n. 吸引力；景点;audience=n. 观众;authority=n. 权威；当局;automatic=adj. 自动的;available=adj. 可获得的;average=adj. 平均的;awkward=adj. 尴尬的;background=n. 背景;ban=v. 禁止;bargain=n. 便宜货;barrier=n. 障碍;basis=n. 基础;benefit=n. 好处;bias=n. 偏见;bond=n. 纽带;boost=v. 促进;bother=v. 打扰;brief=adj. 简短的;budget=n. 预算;burden=n. 负担;calculate=v. 计算;campaign=n. 运动；活动;candidate=n. 候选人;capable=adj. 有能力的;capacity=n. 容量；能力;career=n. 职业;casual=adj. 随意的;category=n. 种类;cease=v. 停止;ceremony=n. 典礼;characteristic=n. 特征;charge=v. 收费；n. 负责;charity=n. 慈善;circumstance=n. 情况;civil=adj. 公民的;claim=v. 声称;classic=adj. 经典的;climate=n. 气候;collapse=v. 倒塌;colleague=n. 同事;combine=v. 结合;comfort=n. 安慰；舒适;command=n. 命令;comment=n. 评论;commercial=adj. 商业的;commit=v. 犯（错）；承诺;committee=n. 委员会;competitive=adj. 有竞争力的;complex=adj. 复杂的;component=n. 组成部分;concentrate=v. 集中;concept=n. 概念;concern=n. 担心；v. 涉及;conclude=v. 得出结论;conclusion=n. 结论;conduct=v. 进行;conference=n. 会议;confirm=v. 确认;conflict=n. 冲突;confuse=v. 使困惑;congratulate=v. 祝贺;consequence=n. 后果;conservation=n. 保护;considerable=adj. 相当大的;consist=v. 由…组成;constant=adj. 不断的;construct=v. 建造;consult=v. 咨询;consume=v. 消耗;contact=v. 联系;contemporary=adj. 当代的;content=n. 内容；adj. 满足的;contest=n. 比赛;context=n. 语境;contribute=v. 贡献;convenient=adj. 方便的;convince=v. 说服;cooperate=v. 合作;core=n. 核心;crash=v. 撞击;crew=n. 全体工作人员;crisis=n. 危机;critical=adj. 批判的；关键的;criticize=v. 批评;crucial=adj. 至关重要的;cultivate=v. 培养;currency=n. 货币;current=adj. 当前的;decline=v. 下降；拒绝;dedicate=v. 致力于;defeat=v. 击败;defend=v. 保卫;define=v. 定义;definitely=adv. 肯定地;delay=v. 推迟;deliberately=adv. 故意地;delicate=adj. 精致的；脆弱的;deliver=v. 递送;demand=n. 需求;demonstrate=v. 证明；展示;deny=v. 否认;depend=v. 依靠;deposit=n. 存款；押金;deserve=v. 应得;desire=n. 渴望;despite=prep. 尽管;destination=n. 目的地;destroy=v. 毁坏;detail=n. 细节;detect=v. 发现；探测;determine=v. 决定;device=n. 装置;devote=v. 献身于;dialogue=n. 对话;dilemma=n. 困境;disability=n. 残疾;disaster=n. 灾难;discipline=n. 纪律;display=v. 展示;distance=n. 距离;distinguish=v. 区分;distribute=v. 分配;disturb=v. 打扰;diverse=adj. 多样的;domestic=adj. 国内的；家庭的;donate=v. 捐赠;draft=n. 草稿;dramatic=adj. 戏剧性的;dynamic=adj. 有活力的;eager=adj. 渴望的;economic=adj. 经济的;economy=n. 经济;edition=n. 版本;efficient=adj. 高效的;elderly=adj. 年长的;element=n. 元素;eliminate=v. 消除;embarrass=v. 使尴尬;emergency=n. 紧急情况;emotion=n. 情感;emphasis=n. 强调;employ=v. 雇用;enable=v. 使能够;encounter=v. 遇到;enhance=v. 提高;enormous=adj. 巨大的;ensure=v. 确保;entertainment=n. 娱乐;enthusiasm=n. 热情;entire=adj. 整个的;equal=adj. 平等的;equipment=n. 设备;error=n. 错误;essential=adj. 必要的;establish=v. 建立;estimate=v. 估计;evaluate=v. 评价;eventually=adv. 最终;evidence=n. 证据;evident=adj. 明显的;evolve=v. 进化；发展;exceed=v. 超过;exception=n. 例外;exhaust=v. 使筋疲力尽;exhibition=n. 展览;expand=v. 扩大;expense=n. 费用;explode=v. 爆炸;export=v. 出口;expose=v. 暴露;extend=v. 延伸;extent=n. 程度;extra=adj. 额外的;extraordinary=adj. 非凡的;extreme=adj. 极端的;facility=n. 设施;factor=n. 因素;faith=n. 信念;false=adj. 错误的；虚假的;fantastic=adj. 极好的;fascinate=v. 使着迷;feature=n. 特点;fee=n. 费用;figure=n. 数字；人物;finance=n. 财政;flexible=adj. 灵活的;focus=v. 集中;former=adj. 以前的;fortunately=adv. 幸运地;found=v. 创建;foundation=n. 基础；基金会;frequent=adj. 频繁的;frustrate=v. 使沮丧;fuel=n. 燃料;function=n. 功能;fund=n. 资金;fundamental=adj. 基本的;generate=v. 产生;generation=n. 一代人;generous=adj. 慷慨的;genuine=adj. 真正的;global=adj. 全球的;grab=v. 抓住;gradually=adv. 逐渐地;grant=v. 授予;grateful=adj. 感激的;guarantee=v. 保证;guilty=adj. 内疚的；有罪的;handle=v. 处理;harmony=n. 和谐;hesitate=v. 犹豫;highlight=v. 强调;hire=v. 雇用；租用;household=n. 家庭;identify=v. 识别;identity=n. 身份;ignore=v. 忽视;illustrate=v. 说明;image=n. 形象；图像;immediately=adv. 立即;impact=n. 影响;implement=v. 实施;imply=v. 暗示;impose=v. 强加;impress=v. 给…留下深刻印象;impression=n. 印象;incident=n. 事件;income=n. 收入;indicate=v. 表明;individual=n. 个人;industry=n. 工业;inevitable=adj. 不可避免的;infer=v. 推断;initial=adj. 最初的;injure=v. 伤害;innocent=adj. 无辜的;insight=n. 洞察力;insist=v. 坚持;inspire=v. 激励;install=v. 安装;institution=n. 机构;insurance=n. 保险;intend=v. 打算;intense=adj. 强烈的;interact=v. 互动;interpret=v. 解释；口译;interrupt=v. 打断;involve=v. 涉及;isolate=v. 隔离;issue=n. 问题；议题;item=n. 项目;journal=n. 期刊；日记;justice=n. 正义;justify=v. 证明…正当;label=n. 标签;labour=n. 劳动;landscape=n. 风景;launch=v. 发起；发射;layer=n. 层;lecture=n. 讲座;legal=adj. 合法的;licence=n. 执照;literature=n. 文学;locate=v. 位于；找到;logical=adj. 合乎逻辑的;loyal=adj. 忠诚的;maintain=v. 维持;major=adj. 主要的；n. 专业;majority=n. 大多数;mature=adj. 成熟的;maximum=n. 最大值;media=n. 媒体;medium=adj. 中等的;mental=adj. 精神的；心理的;merely=adv. 仅仅;minimum=n. 最小值;minority=n. 少数;mission=n. 任务；使命;moderate=adj. 适度的;monitor=v. 监控;moral=adj. 道德的;motivate=v. 激励;mutual=adj. 相互的;negative=adj. 消极的;neglect=v. 忽视;negotiate=v. 谈判;nevertheless=adv. 然而;numerous=adj. 许多的;obey=v. 服从;objective=n. 目标；adj. 客观的;obligation=n. 义务;observe=v. 观察；遵守;obstacle=n. 障碍;obtain=v. 获得;obvious=adj. 明显的;occasion=n. 场合;occupy=v. 占据;occur=v. 发生;operate=v. 操作；做手术;opportunity=n. 机会;oppose=v. 反对;optimistic=adj. 乐观的;option=n. 选择;origin=n. 起源;original=adj. 原始的；独创的;otherwise=adv. 否则;outcome=n. 结果;outstanding=adj. 杰出的;overall=adj. 全面的;overcome=v. 克服;owe=v. 欠;participate=v. 参加;passion=n. 激情;passive=adj. 被动的;pattern=n. 模式;perceive=v. 察觉;percentage=n. 百分比;perform=v. 表演；执行;permanent=adj. 永久的;permit=v. 允许;persist=v. 坚持;perspective=n. 观点；视角;persuade=v. 说服;phenomenon=n. 现象;philosophy=n. 哲学;potential=n. 潜力;precious=adj. 珍贵的;precise=adj. 精确的;predict=v. 预测;preference=n. 偏好;pressure=n. 压力;previous=adj. 先前的;primary=adj. 主要的；初级的;principle=n. 原则;priority=n. 优先事项;procedure=n. 程序;proceed=v. 继续进行;process=n. 过程;profession=n. 职业;professional=adj. 专业的;profit=n. 利润;promote=v. 促进；晋升;prompt=adj. 迅速的;proper=adj. 恰当的;property=n. 财产;proportion=n. 比例;propose=v. 提议;prospect=n. 前景;psychology=n. 心理学;publish=v. 出版;pursue=v. 追求;qualify=v. 使有资格;range=n. 范围;rapid=adj. 迅速的;rare=adj. 罕见的;rate=n. 比率;react=v. 反应;realize=v. 意识到；实现;recognize=v. 认出；认可;recommend=v. 推荐;recover=v. 恢复;reflect=v. 反映；反思;reform=n. 改革;region=n. 地区;register=v. 登记;regret=v. 后悔;regular=adj. 定期的；规律的;reject=v. 拒绝;relate=v. 联系;relationship=n. 关系;relative=n. 亲戚；adj. 相对的;release=v. 释放；发布;relevant=adj. 相关的;reliable=adj. 可靠的;relieve=v. 缓解;rely=v. 依赖;remark=n. 评论;remarkable=adj. 非凡的;remind=v. 提醒;remote=adj. 遥远的;remove=v. 移除;replace=v. 代替;represent=v. 代表;reputation=n. 名声;request=n. 请求;rescue=v. 营救;reserve=v. 预订；保留;resist=v. 抵抗;resolve=v. 解决;resource=n. 资源;respond=v. 回应;response=n. 回应;restore=v. 恢复;restrict=v. 限制;retire=v. 退休;reveal=v. 揭示;revise=v. 修改；复习;reward=n. 奖励;role=n. 角色;routine=n. 常规;rural=adj. 农村的;sacrifice=v. 牺牲;scale=n. 规模；刻度;scene=n. 场景;schedule=n. 时间表;scheme=n. 计划;scholar=n. 学者;secure=adj. 安全的;security=n. 安全;seek=v. 寻求;sensitive=adj. 敏感的;sequence=n. 顺序;settle=v. 定居；解决;severe=adj. 严重的;shift=v. 转移;significant=adj. 重要的；显著的;sincere=adj. 真诚的;solution=n. 解决办法;source=n. 来源;species=n. 物种;specific=adj. 具体的;spiritual=adj. 精神的;stable=adj. 稳定的;status=n. 地位;steady=adj. 稳定的;strategy=n. 策略;strength=n. 力量；优点;structure=n. 结构;struggle=v. 奋斗；挣扎;submit=v. 提交;substitute=n. 替代品;sufficient=adj. 足够的;sum=n. 总数;summary=n. 总结;superior=adj. 更好的;supply=n. 供应;surround=v. 包围;survey=n. 调查;suspect=v. 怀疑;sustain=v. 维持;symbol=n. 象征;sympathy=n. 同情;target=n. 目标;technique=n. 技术;temporary=adj. 临时的;tend=v. 倾向于;tension=n. 紧张;theory=n. 理论;threat=n. 威胁;tolerate=v. 容忍;tough=adj. 艰难的；坚强的;trace=n. 痕迹;transfer=v. 转移;transform=v. 改变;transport=n. 运输;trend=n. 趋势;typical=adj. 典型的;ultimate=adj. 最终的;undergo=v. 经历;unique=adj. 独特的;universe=n. 宇宙;urban=adj. 城市的;urge=v. 敦促;urgent=adj. 紧急的;vary=v. 变化;vast=adj. 巨大的;version=n. 版本;victim=n. 受害者;view=n. 观点；景色;vital=adj. 至关重要的;vivid=adj. 生动的;welfare=n. 福利;widespread=adj. 广泛的;willing=adj. 愿意的;witness=v. 目击;worthwhile=adj. 值得的';
+/* --- 固定搭配：每行「短语|中文|例句|例句中文」。例句里短语原样出现（动词可以变形） --- */
+const MID_PHRASES=`a few|一些，几个|I have a few friends at my new school.|我在新学校有几个朋友。
+a little|一点儿|There is a little milk in the glass.|杯子里有一点儿牛奶。
+a lot of|许多|There are a lot of books in the library.|图书馆里有很多书。
+a piece of|一张，一块|Please give me a piece of paper.|请给我一张纸。
+after school|放学后|We play basketball after school.|我们放学后打篮球。
+all over the world|全世界|People all over the world love music.|全世界的人都喜欢音乐。
+all the time|一直，总是|My little brother talks all the time.|我弟弟总是说个不停。
+arrive at|到达（小地点）|We arrived at the station at eight.|我们八点到达车站。
+as soon as|一…就…|Call me as soon as you get home.|你一到家就给我打电话。
+ask for|请求，要求|You can ask for help when you need it.|需要的时候你可以请求帮助。
+at first|起初|At first I was afraid of the water.|起初我很怕水。
+at last|最后，终于|At last we found the lost cat.|我们终于找到了那只走丢的猫。
+at least|至少|You should drink at least six glasses of water a day.|你每天至少应该喝六杯水。
+at the same time|同时|We can't talk and listen at the same time.|我们不能同时说话又听别人讲。
+at the end of|在…的末尾|There is a shop at the end of the street.|街道尽头有一家商店。
+be afraid of|害怕|My sister is afraid of big dogs.|我妹妹害怕大狗。
+be able to|能够|She will be able to swim next summer.|明年夏天她就会游泳了。
+be busy with|忙于|Mom is busy with her work today.|妈妈今天忙着工作。
+be famous for|因…而出名|Hangzhou is famous for the West Lake.|杭州因西湖而闻名。
+be friendly to|对…友好|Our teacher is friendly to everyone.|我们老师对每个人都很友好。
+be full of|充满|The room was full of happy children.|房间里满是快乐的孩子。
+be good at|擅长|Tom is good at drawing animals.|汤姆擅长画动物。
+be good for|对…有益|Fruit is good for your health.|水果对健康有好处。
+be interested in|对…感兴趣|I am interested in science.|我对科学感兴趣。
+be late for|迟到|Hurry up, or you will be late for school.|快点，不然你上学要迟到了。
+be proud of|为…骄傲|My parents are proud of me.|我的父母为我骄傲。
+be ready for|为…做好准备|We are ready for the test.|我们准备好考试了。
+be similar to|与…相似|Your bag is similar to mine.|你的书包和我的很像。
+be strict with|对…严格|Our coach is strict with us.|我们的教练对我们很严格。
+be worried about|担心|She was worried about her sick grandma.|她很担心生病的奶奶。
+because of|因为|We stayed at home because of the rain.|因为下雨我们待在家里。
+begin with|以…开始|The story begins with a little girl.|故事从一个小女孩开始。
+believe in|信任，相信|Always believe in yourself.|永远相信你自己。
+both of|两个都|Both of my parents are teachers.|我爸爸妈妈都是老师。
+break down|出故障|Our car broke down on the way home.|我们的车在回家路上坏了。
+by bus|乘公共汽车|I usually go to school by bus.|我通常坐公交车上学。
+by the way|顺便问一下|By the way, where is your sister?|顺便问一下，你妹妹在哪儿？
+call back|回电话|I will call back after dinner.|我晚饭后再回电话。
+calm down|冷静下来|Calm down and tell me what happened.|冷静一下，告诉我发生了什么。
+catch up with|赶上|Run faster and catch up with the others.|跑快点，赶上其他人。
+change one's mind|改变主意|He changed his mind and stayed at home.|他改变主意，留在了家里。
+cheer up|使高兴，振作起来|The funny movie cheered up my sad friend.|这部有趣的电影让我难过的朋友开心起来。
+clean up|打扫干净|Let's clean up the classroom together.|我们一起把教室打扫干净吧。
+come back|回来|Dad will come back next Monday.|爸爸下周一回来。
+come from|来自|My new friend comes from Canada.|我的新朋友来自加拿大。
+come true|实现|I hope your dream will come true.|我希望你的梦想会成真。
+cut up|切碎|Cut up the carrots and put them in the pot.|把胡萝卜切碎放进锅里。
+depend on|依靠，取决于|Whether we go out depends on the weather.|我们出不出去取决于天气。
+do one's homework|做作业|I do my homework after dinner every day.|我每天晚饭后做作业。
+each other|互相|The two friends often help each other.|这两个朋友经常互相帮助。
+fall asleep|睡着|The baby fell asleep in my arms.|宝宝在我怀里睡着了。
+fall down|摔倒|The boy fell down and hurt his knee.|男孩摔倒了，伤到了膝盖。
+fill in|填写|Please fill in this form with your name.|请把你的名字填在这张表上。
+find out|查明，发现|Let's find out who broke the window.|我们来查清楚是谁打破了窗户。
+from now on|从现在起|From now on, I will get up early.|从现在起，我要早起。
+get along with|与…相处|She gets along with all her classmates.|她和所有同学都相处得很好。
+get off|下车|We get off the bus at the next stop.|我们在下一站下车。
+get on|上车|Get on the bus quickly, please.|请快点上车。
+get ready for|为…做准备|We are getting ready for the school trip.|我们正在为学校旅行做准备。
+get up|起床|I get up at six thirty every morning.|我每天早上六点半起床。
+give up|放弃|Never give up when things are hard.|事情再难也不要放弃。
+go on|继续|Please go on reading the story.|请继续读这个故事。
+go shopping|去购物|We go shopping on Saturday mornings.|我们星期六上午去购物。
+grow up|长大|I want to be a doctor when I grow up.|我长大后想当医生。
+have a good time|玩得开心|We had a good time at the party.|我们在聚会上玩得很开心。
+have fun|玩得高兴|The kids have fun at the beach.|孩子们在海滩玩得很开心。
+hear from|收到…的来信|I often hear from my pen pal in England.|我经常收到英国笔友的来信。
+help yourself|随便吃|Help yourself to some fish, please.|请随便吃点鱼吧。
+hurry up|赶快|Hurry up, the movie is starting!|快点，电影要开始了！
+in front of|在…前面|There is a big tree in front of our house.|我们家前面有一棵大树。
+in fact|事实上|In fact, the test was very easy.|事实上，这次考试很简单。
+in the future|在将来|I want to fly to the moon in the future.|将来我想飞上月球。
+in time|及时|The doctor came in time to help him.|医生及时赶来帮了他。
+instead of|代替，而不是|Let's walk instead of taking a taxi.|我们走路去吧，不打车了。
+join in|参加（活动）|Come and join in our game!|来和我们一起玩游戏吧！
+keep healthy|保持健康|Doing sports helps us keep healthy.|做运动帮助我们保持健康。
+keep quiet|保持安静|Please keep quiet in the library.|在图书馆里请保持安静。
+laugh at|嘲笑|It's not nice to laugh at other people.|嘲笑别人是不好的。
+learn from|向…学习|We should learn from our mistakes.|我们应该从错误中学习。
+look after|照顾|Grandma looks after my baby sister.|奶奶照顾我的小妹妹。
+look for|寻找|I am looking for my lost key.|我在找我丢的钥匙。
+look forward to|盼望|I look forward to seeing you again.|我盼望再次见到你。
+look up|（在词典中）查|Look up the new words in your dictionary.|在词典里查一查这些生词。
+lots of|许多|We saw lots of animals at the zoo.|我们在动物园看到了很多动物。
+make friends with|和…交朋友|I want to make friends with the new boy.|我想和那个新来的男孩交朋友。
+make a mistake|犯错|Everyone makes a mistake sometimes.|每个人有时都会犯错。
+more and more|越来越多|More and more people ride bikes to work.|越来越多的人骑车上班。
+no longer|不再|He no longer lives in this city.|他不再住在这座城市了。
+of course|当然|Of course you can use my pencil.|当然，你可以用我的铅笔。
+on time|准时|The train left on time.|火车准时出发了。
+on foot|步行|My grandpa goes to the park on foot.|我爷爷步行去公园。
+on the left|在左边|The bank is on the left of the school.|银行在学校的左边。
+one day|有一天|One day a fox saw some grapes.|有一天，一只狐狸看见了一些葡萄。
+pay for|付钱|Dad paid for our tickets.|爸爸给我们付了票钱。
+pick up|捡起；接人|Please pick up the paper on the floor.|请把地上的纸捡起来。
+play with|和…玩|I like to play with my puppy.|我喜欢和我的小狗玩。
+put on|穿上|Put on your coat, it's cold outside.|穿上外套，外面很冷。
+put away|收起来|Put away your toys before bed.|睡觉前把玩具收好。
+run away|逃跑|The thief ran away when he saw the police.|小偷看到警察就逃跑了。
+see a doctor|看医生|You should see a doctor if you feel ill.|你不舒服的话应该去看医生。
+set up|建立|Our school set up a reading club.|我们学校成立了一个读书俱乐部。
+be born in|出生于|I was born in Hangzhou.|我出生在杭州。
+stay up|熬夜|Don't stay up too late tonight.|今晚不要熬夜太晚。
+take a photo|拍照|Can you take a photo of us?|你能给我们拍张照吗？
+take care of|照顾|She takes care of her pet rabbit every day.|她每天照顾她的宠物兔。
+take off|脱下；起飞|Please take off your shoes at the door.|请在门口脱鞋。
+take part in|参加|Many students took part in the sports meeting.|很多学生参加了运动会。
+take place|发生，举行|The concert will take place in the park.|音乐会将在公园里举行。
+talk about|谈论|We often talk about our favorite books.|我们经常谈论自己喜欢的书。
+thanks to|多亏了|Thanks to your help, I passed the exam.|多亏你的帮助，我通过了考试。
+think of|想到，认为|What do you think of this song?|你觉得这首歌怎么样？
+throw away|扔掉|Don't throw away the plastic bottles.|不要把塑料瓶扔掉。
+try on|试穿|Can I try on this red dress?|我能试穿这条红裙子吗？
+turn off|关掉|Turn off the lights when you leave.|离开时把灯关掉。
+turn on|打开|Please turn on the TV for me.|请帮我打开电视。
+turn down|调小（音量）|Please turn down the music, the baby is sleeping.|请把音乐调小，宝宝在睡觉。
+wait for|等候|We waited for the bus in the rain.|我们在雨里等公交车。
+wake up|醒来|I woke up early this morning.|我今天早上醒得很早。
+worry about|担心|Don't worry about the test.|别担心考试。
+write down|写下|Write down the phone number, please.|请把电话号码写下来。`;
+const HIGH_PHRASES=`account for|解释；占（比例）|Students account for half of the visitors.|学生占了游客的一半。
+according to|根据|According to the weather report, it will rain tomorrow.|根据天气预报，明天会下雨。
+adapt to|适应|It took him a month to adapt to the new school.|他花了一个月适应新学校。
+add to|增加|The bad weather added to our difficulties.|恶劣的天气增加了我们的困难。
+agree with|同意（某人）|I agree with you about the plan.|关于这个计划我同意你的看法。
+apply for|申请|She applied for a job at the museum.|她申请了博物馆的一份工作。
+as a matter of fact|事实上|As a matter of fact, I have never been abroad.|事实上，我从没出过国。
+as a result|结果|He didn't study, and as a result he failed.|他没学习，结果没考过。
+as long as|只要|You can borrow it as long as you return it.|只要你会还，就可以借。
+at a loss|不知所措|I was at a loss when I lost my phone.|丢了手机时我不知所措。
+at present|目前|At present we have no plans to move.|目前我们没有搬家的打算。
+be absorbed in|专心于|He was absorbed in his book and forgot the time.|他沉浸在书里，忘了时间。
+be aware of|意识到|We should be aware of the danger of smoking.|我们应该意识到吸烟的危害。
+be capable of|有能力做|She is capable of solving hard problems.|她有能力解决难题。
+be concerned about|关心，担心|Many people are concerned about the environment.|很多人关心环境问题。
+be connected with|与…有联系|Good health is connected with good habits.|健康与好习惯有关。
+be crazy about|对…着迷|My brother is crazy about football.|我哥哥对足球很着迷。
+be devoted to|致力于|The doctor is devoted to helping poor people.|这位医生致力于帮助穷人。
+be familiar with|熟悉|She is familiar with this part of the city.|她熟悉城市的这一片。
+be fond of|喜欢|She is fond of classical music.|她喜欢古典音乐。
+be known as|作为…而闻名|Paris is known as the city of love.|巴黎被称为爱之城。
+be likely to|很可能|It is likely to snow this weekend.|这个周末很可能下雪。
+be responsible for|对…负责|Each student is responsible for one task.|每个学生负责一项任务。
+be satisfied with|对…满意|The teacher was satisfied with our work.|老师对我们的作业很满意。
+be supposed to|应该|You are supposed to arrive before nine.|你应该在九点前到。
+be used to|习惯于|I am used to getting up early.|我习惯早起了。
+break out|爆发|A fire broke out in the old building.|那栋旧楼里发生了火灾。
+bring about|引起，带来|The internet has brought about many changes.|互联网带来了许多变化。
+bring up|抚养；提出|She was brought up by her grandparents.|她是爷爷奶奶带大的。
+by accident|偶然|I met my old teacher by accident.|我偶然遇到了我的老师。
+by no means|决不|This problem is by no means easy.|这个问题决不简单。
+be short of|缺少|We are short of time, so let's hurry.|我们时间不够了，快点吧。
+call off|取消|The match was called off because of the storm.|比赛因暴风雨取消了。
+be addicted to|沉迷于|He is addicted to computer games.|他沉迷于电脑游戏。
+care about|关心，在乎|He doesn't care about what others think.|他不在乎别人怎么想。
+carry out|实施，执行|The scientists carried out an experiment.|科学家们进行了一项实验。
+come across|偶然遇到|I came across an old photo in the drawer.|我在抽屉里偶然发现一张旧照片。
+come up with|想出|She came up with a great idea.|她想出了一个好主意。
+compare with|与…比较|Compared with last year, prices are higher.|和去年相比，价格更高了。
+concentrate on|集中注意力于|Turn off your phone and concentrate on your work.|关掉手机，专心工作。
+consist of|由…组成|The team consists of ten players.|这个队由十名队员组成。
+contribute to|有助于；导致|Exercise contributes to good health.|锻炼有益健康。
+cope with|应付|He learned to cope with stress.|他学会了应对压力。
+cut down|削减；砍倒|We should cut down on sugar.|我们应该少吃糖。
+deal with|处理|How do you deal with difficult customers?|你怎么应对难缠的顾客？
+devote oneself to|献身于|She devoted herself to teaching.|她把一生献给了教育。
+die out|灭绝|Many kinds of animals have died out.|很多种动物已经灭绝了。
+due to|由于|The flight was delayed due to fog.|航班因大雾延误了。
+end up|最后|We got lost and ended up in a small village.|我们迷了路，最后到了一个小村子。
+figure out|弄清楚|I can't figure out this math problem.|我弄不懂这道数学题。
+focus on|集中于|Today we will focus on reading skills.|今天我们重点练习阅读技巧。
+get rid of|摆脱，去掉|It's hard to get rid of bad habits.|改掉坏习惯很难。
+get through|通过；熬过|She got through the exam easily.|她轻松通过了考试。
+give in|屈服，让步|He refused to give in to the pressure.|他拒绝向压力屈服。
+give off|发出（气味、光等）|The flowers give off a sweet smell.|这些花散发出香味。
+go through|经历|The country went through hard times.|这个国家经历了困难时期。
+hand in|上交|Please hand in your essays on Friday.|请星期五交作文。
+hold on|等一下；坚持|Hold on, I'll get my coat.|等一下，我去拿外套。
+in addition|另外|In addition, we need two more chairs.|另外，我们还需要两把椅子。
+in charge of|负责|Mr. Li is in charge of the music club.|李老师负责音乐社团。
+in danger|处于危险中|Many wild animals are in danger.|许多野生动物处境危险。
+in general|总的来说|In general, the plan worked well.|总的来说，这个计划效果很好。
+in other words|换句话说|In other words, we need more time.|换句话说，我们需要更多时间。
+in spite of|尽管|In spite of the rain, they went hiking.|尽管下雨，他们还是去远足了。
+in terms of|就…而言|In terms of price, this phone is the best.|就价格而言，这款手机最好。
+keep in touch with|与…保持联系|I still keep in touch with my old classmates.|我仍和老同学保持联系。
+keep up with|跟上|It's hard to keep up with the fast changes.|很难跟上这些快速的变化。
+lead to|导致|Too much screen time can lead to poor sleep.|看屏幕太久会导致睡眠不好。
+look into|调查|The police are looking into the accident.|警察正在调查这起事故。
+look down upon|看不起|Never look down upon other people.|永远不要看不起别人。
+look up to|尊敬|Young players look up to him.|年轻球员都敬仰他。
+make a difference|有影响，起作用|Every small action can make a difference.|每一个小行动都能带来改变。
+make full use of|充分利用|We should make full use of our time.|我们应该充分利用时间。
+make sense|讲得通|His explanation makes sense to me.|他的解释我觉得说得通。
+make up one's mind|下定决心|She made up her mind to study abroad.|她下定决心出国留学。
+no doubt|毫无疑问|No doubt she will win the race.|毫无疑问她会赢得比赛。
+on purpose|故意|I'm sure he did it on purpose.|我确定他是故意的。
+out of control|失去控制|The car went out of control on the ice.|汽车在冰上失控了。
+pay attention to|注意|Pay attention to the traffic lights.|注意交通信号灯。
+play a role in|在…中起作用|Parents play a role in a child's education.|父母在孩子教育中起着作用。
+put forward|提出|He put forward a new plan at the meeting.|他在会上提出了一个新计划。
+put off|推迟|Don't put off today's work until tomorrow.|今天的事不要拖到明天。
+put up with|忍受|I can't put up with the noise any longer.|我再也受不了这噪音了。
+regardless of|不管|Everyone is welcome regardless of age.|不论年龄，欢迎所有人。
+rely on|依靠|You can always rely on your family.|你永远可以依靠你的家人。
+result in|导致|The heavy rain resulted in a flood.|大雨导致了洪水。
+run out of|用完|We have run out of milk.|我们的牛奶喝完了。
+set off|出发|We set off for the mountains at dawn.|我们黎明时出发去山里。
+show off|炫耀|He likes to show off his new phone.|他喜欢炫耀他的新手机。
+stand for|代表|What does the letter "P" stand for?|字母 P 代表什么？
+stick to|坚持|Once you make a plan, stick to it.|一旦定了计划，就要坚持。
+suffer from|遭受；患病|Many people suffer from back pain.|很多人有背痛的毛病。
+take advantage of|利用|Take advantage of this chance to practice English.|利用这个机会练习英语。
+take into account|考虑|We must take into account the cost.|我们必须考虑成本。
+take over|接管|His son will take over the business.|他儿子将接手这个生意。
+take up|开始从事；占据|She took up painting last year.|她去年开始学画画。
+turn out|结果是|The trip turned out to be great fun.|这次旅行结果非常有趣。
+turn to|求助于|When I have problems, I turn to my teacher.|遇到问题时我会求助于老师。
+upside down|颠倒|The picture is hanging upside down.|这幅画挂倒了。
+used to|过去常常|I used to live in a small town.|我以前住在一个小镇上。
+work out|解决；锻炼|We worked out the answer together.|我们一起算出了答案。`;
 const WORD_PACKS=[
  {id:'pk_ket',name:'KET 核心词汇',desc:()=>`剑桥 A2 Key 常考词，按动物、食物、学校、天气等 ${KET_WORDS.length} 个主题整理`,pairs:()=>KET_WORDS.flatMap(([t,s])=>s.split(';'))},
- {id:'pk_mid',name:'初中高频词',desc:()=>'中考常考的高频词，按字母排序，带词性',pairs:()=>MID_WORDS.split(';')},
- {id:'pk_high',name:'高中高频词',desc:()=>'高中和高考阅读里最常见的核心词，按字母排序，带词性',pairs:()=>HIGH_WORDS.split(';')}];
-function packWords(pk){const seen=new Set(),out=[];for(const p of pk.pairs()){const i=p.indexOf('=');if(i<1)continue;const en=p.slice(0,i).trim(),zh=p.slice(i+1).trim(),k=en.toLowerCase();if(!seen.has(k)){seen.add(k);out.push({en,zh})}}return out}
-function importPack(id){const pk=WORD_PACKS.find(x=>x.id===id);const {fresh,dup}=splitMastered(packWords(pk));
+ {id:'pk_mid',mix:true,name:'初中高频词',desc:()=>'中考常考的高频词，按字母排序，带词性',pairs:()=>MID_WORDS.split(';')},
+ {id:'pk_high',mix:true,name:'高中高频词',desc:()=>'高中和高考阅读里最常见的核心词，按字母排序，带词性',pairs:()=>HIGH_WORDS.split(';')},
+ {id:'pk_midph',mix:true,name:'初中固定搭配',desc:()=>'中考常考短语，比如 look forward to、be good at，每个都带例句',pairs:()=>MID_PHRASES.split('\n')},
+ {id:'pk_highph',mix:true,name:'高中固定搭配',desc:()=>'高中常考短语，比如 come up with、pay attention to，每个都带例句',pairs:()=>HIGH_PHRASES.split('\n')}];
+function packWords(pk){const seen=new Set(),out=[];for(const p of pk.pairs()){let en,zh,ex='',exZh='';
+  if(p.includes('|'))[en,zh,ex='',exZh='']=p.split('|').map(x=>x.trim());else{const i=p.indexOf('=');if(i<1)continue;en=p.slice(0,i).trim();zh=p.slice(i+1).trim()}
+  const k=(en||'').toLowerCase();if(k&&zh&&!seen.has(k)){seen.add(k);out.push({en,zh,ex,exZh})}}return out}
+function importPack(id){const pk=WORD_PACKS.find(x=>x.id===id);let {fresh,dup}=splitMastered(packWords(pk));if(pk.mix)fresh=shuffle(fresh); /* 打乱顺序，免得同一天学到 a few / a little 这种长得像的 */
   let d=S.decks.find(x=>x.id===id);if(!d){d={id,name:pk.name,items:[]};S.decks.push(d)}const n=addWords(d,fresh);save();return {n,dup:dup.length}}
 
 function runStep(ctx,step){
@@ -1095,6 +1393,7 @@ function runStep(ctx,step){
   if(!list.length)return Promise.resolve();
   switch(step.key){
     case 'match':return masteryLoop(ctx,list,(l,lab)=>matchRound(ctx,l,lab));
+    case 'vsay':return masteryLoop(ctx,list,(l,lab)=>zhSayRound(ctx,l,lab));
     case 'venzh':case 'vzhen':case 'enzh':case 'zhen':return masteryLoop(ctx,list,(l,lab)=>choiceRound(ctx,l,lab,step.key));
     case 'spell':return spellStep(ctx,list);
     case 'fill':return masteryLoop(ctx,list,(l,lab)=>fillRound(ctx,l,lab));
@@ -1108,13 +1407,14 @@ async function runDay(){
   buildDay();const items=dayItems();if(!items.length)return go('today');
   const ctx={tok:++RUN,mode:'day',items,pool:items};
   S.day.started=true;save();flowShell(ctx);window.scrollTo(0,0);
+  const cv=curveSet();
   for(let i=S.day.step;i<STEPS.length;i++){
-    const step=STEPS[i];ctx.step=step;drawMini(i);
+    const step=STEPS[i];ctx.step=step;drawMini(i);ctx.items=NEW_ONLY.has(step.key)?items.filter(it=>!cv.has(it.id)):items;
     if(step.key==='fill'||step.key==='cloze'){await ensureGen(ctx);if(!alive(ctx))return}
-    const n=step.key==='talk'?patCount():step.ex?items.map(it=>step.key==='fill'||step.key==='cloze'?genFor(it):it).filter(hasEx).length:items.length;
+    const n=step.key==='talk'?patCount():step.ex?ctx.items.map(it=>step.key==='fill'||step.key==='cloze'?genFor(it):it).filter(hasEx).length:ctx.items.length;
     if(!n||(step.key==='cloze'&&n<2)){S.day.step=i+1;save();continue}
     $('#fTitle').textContent=step.ico+' '+step.name;$('#fRound').textContent=`第 ${i+1}/${STEPS.length} 关`;
-    await pause(ctx,`第 ${i+1} 关：${step.name}`,`<p>${step.desc}</p><p class="hint">${step.key==='talk'?patSummary():step.ex?n+' 个句子':n+' 个单词'}</p>`,'开始');
+    await pause(ctx,`第 ${i+1} 关：${step.name}`,`<p>${step.desc}</p><p class="hint">${step.key==='talk'?patSummary():step.ex?n+' 个句子':n+' 个单词'}${NEW_ONLY.has(step.key)&&cv.size?`（复习词跳过这一关）`:''}</p>`,'开始');
     if(!alive(ctx))return;
     await runStep(ctx,step);if(!alive(ctx))return;
     S.day.step=i+1;save();beep('win');
@@ -1124,8 +1424,10 @@ async function runDay(){
 function finishDay(ctx){
   const t=today(),d=S.day,newly=[];
   for(const id of d.revIds){const r=S.srs[id];if(!r)continue;r.reviews=(r.reviews||0)+1;r.last=t;
-    if(d.missed[id]){r.st=0;r.due=addDays(t,INTERVALS[0])}else{r.st++;if(r.st>=INTERVALS.length){r.mastered=true;r.masteredOn=t;newly.push(id)}else r.due=addDays(t,INTERVALS[r.st])}}
-  for(const id of d.newIds){S.srs[id]={st:0,due:addDays(t,INTERVALS[0]),learned:t,last:t,reviews:0}}
+    if(d.missed[id]){r.st=0;r.weak=true;r.due=addDays(t,1)}
+    else if(r.weak){r.weak=false;r.st=1;r.due=addDays(t,INTERVALS[1])} // 巩固全对：开始按遗忘曲线复习
+    else{r.st++;if(r.st>=INTERVALS.length){r.mastered=true;r.masteredOn=t;newly.push(id)}else r.due=addDays(t,INTERVALS[r.st])}}
+  for(const id of d.newIds){S.srs[id]={st:0,due:addDays(t,INTERVALS[0]),learned:t,last:t,reviews:0};if(d.missed[id])S.srs[id].weak=true}
   if(S.streak.last!==t){S.streak.n=S.streak.last===addDays(t,-1)?S.streak.n+1:1;S.streak.last=t}
   S.history.push({date:t,n:d.newIds.length,r:d.revIds.length,miss:Object.keys(d.missed).length});
   finishPats(t);{const m=applyXp(30);bubbleText=m||'今天的任务完成啦！我也长大了一点～喂我吃苹果吧！'}d.done=true;d.mastered=newly;S.food+=5;save();hud();checkBadges();beep('win');
@@ -1143,11 +1445,11 @@ function renderToday(){
     $('#view').innerHTML=`<div class="stack">
      <div class="card result stack"><div class="ptitle">今天的任务完成啦！</div>
       <div class="stats"><div class="stat"><b>${d.newIds.length}</b><span>新学单词</span></div><div class="stat"><b>${d.revIds.length}</b><span>复习单词</span></div><div class="stat"><b>${S.streak.n}</b><span>连续打卡天</span></div></div>
-      ${missed.length?`<div><div class="secl">今天出过错的词（明天会再复习）</div>${chips(missed)}</div>`:'<div>今天一个都没错，太厉害了！</div>'}
+      ${missed.length?`<div><div class="secl">今天出过错的词（明天继续巩固，直到全对）</div>${chips(missed)}</div>`:'<div>今天一个都没错，太厉害了！</div>'}
       ${d.mastered&&d.mastered.length?`<div><div class="secl">新掌握的单词</div>${chips(d.mastered,'rev')}</div>`:''}
-      <p class="hint">明天要复习 ${dueOn(addDays(today(),1))} 个旧单词，再学 ${S.newPerDay} 个新词。</p>
-      <div class="row center"><button class="btn go" data-go="pet">去喂${esc(S.pet.name)}</button>${nextNew(1).length?'<button class="btn" id="extra">再学一组新词（加餐）</button>':''}</div></div></div>`;
-    const ex=$('#extra');if(ex)ex.onclick=()=>{S.day={date:today(),newIds:nextNew(S.newPerDay),revIds:[],step:0,missed:{},started:false,done:false,extra:true,patRev:[],patNew:[]};save();renderToday()};
+      <p class="hint">明天要复习 ${dueOn(addDays(today(),1))} 个旧单词，再学 ${newQuota()} 个新词。${weakCount()?`（巩固中的词有 ${weakCount()} 个，不会的词最多 ${WEAK_MAX} 个，新词会相应减少）`:''}</p>
+      <div class="row center"><button class="btn go" data-go="pet">去喂${esc(S.pet.name)}</button>${nextNew(1).length&&newQuota()?'<button class="btn" id="extra">再学一组新词（加餐）</button>':''}</div></div></div>`;
+    const ex=$('#extra');if(ex)ex.onclick=()=>{S.day={date:today(),newIds:nextNew(newQuota()),revIds:[],curveIds:[],step:0,missed:{},started:false,done:false,extra:true,patRev:[],patNew:[]};save();renderToday()};
     return;
   }
   if(!items.length){
@@ -1157,9 +1459,12 @@ function renderToday(){
   }
   const revs=d.revIds.map(id=>m.get(id)).filter(Boolean),news=d.newIds.map(id=>m.get(id)).filter(Boolean);
   $('#view').innerHTML=`<div class="stack">
-   <div><h2>${d.extra?'加餐':'今日任务'} · ${d.date.slice(5).replace('-','月')}日</h2><p class="sub">${revs.length?`先复习 ${revs.length} 个旧单词，`:''}学 ${news.length} 个新单词，再练几句日常对话。中途可以暂停，下次接着来。</p></div>
+   <div><h2>${d.extra?'加餐':'今日任务'} · ${d.date.slice(5).replace('-','月')}日</h2><p class="sub">${revs.length?`先复习 ${revs.length} 个旧单词，`:''}学 ${news.length} 个新单词，再练几句日常对话。中途可以暂停，下次接着来。</p>
+     ${d.from?`<div class="help">这是 ${d.from.slice(5).replace('-','月')}日 没做完的任务，进度都保留着，接着做完就行。</div>`:''}
+     ${!d.extra&&news.length<S.newPerDay&&weakCount()>=WEAK_MAX-S.newPerDay&&weakCount()?`<div class="help">还有 ${weakCount()} 个词在巩固中，不会的词最多 ${WEAK_MAX} 个，所以今天${news.length?`只学 ${news.length} 个`:'先不学'}新词。把巩固的词练会，新词就会多起来。</div>`:''}</div>
    <div class="card stack" style="gap:10px">
-    ${revs.length?`<div><div class="secl">复习（按遗忘曲线到期）</div><div class="wordchips">${revs.map(i=>`<span class="wc rev">${esc(i.en)}</span>`).join('')}</div></div>`:''}
+    ${revs.filter(i=>S.srs[i.id]&&S.srs[i.id].weak).length?`<div><div class="secl">巩固（之前错过，今天全对才算过关）</div><div class="wordchips">${revs.filter(i=>S.srs[i.id]&&S.srs[i.id].weak).map(i=>`<span class="wc miss">${esc(i.en)}</span>`).join('')}</div></div>`:''}
+    ${revs.filter(i=>!(S.srs[i.id]&&S.srs[i.id].weak)).length?`<div><div class="secl">复习（按遗忘曲线到期，只做说中文、拼写和句子）</div><div class="wordchips">${revs.filter(i=>!(S.srs[i.id]&&S.srs[i.id].weak)).map(i=>`<span class="wc rev">${esc(i.en)}</span>`).join('')}</div></div>`:''}
     ${news.length?`<div><div class="secl">新单词</div><div class="wordchips">${news.map(i=>`<span class="wc new">${esc(i.en)} ${esc(i.zh)}</span>`).join('')}</div></div>`:''}
     ${noEx.length?`<div class="help">有 ${noEx.length} 个词还没有例句（${noEx.slice(0,4).map(i=>esc(i.en)).join('、')}${noEx.length>4?'…':''}），句子关卡会跳过它们。
       ${aiReady()?'<button class="btn small" id="aiT" style="margin-top:6px">✨ 让 AI 配例句</button>':'可以在词库里导入时写上例句。'}</div>`:''}
@@ -1499,16 +1804,23 @@ function patPet(){
   if(S.patN<10){S.patN++;const m=applyXp(2);if(m)msg=m}
   save();anim('wiggle');beep('pop');petFx('❤️',3);setBubble(msg);const j=$('#joyBar');if(j)j.style.width=p.joy+'%';
 }
+const PET_EN={egg:[['Knock, knock! I am in the egg.','咚咚！我还在蛋里。'],['Keep learning, and I will come out soon!','继续学习，我很快就出来啦！']],
+ sleep:[['Zzz… I am so sleepy.','呼…我好困。'],['Good night! See you tomorrow.','晚安！明天见。']],
+ sad:[['I am hungry. Can I have an apple?','我饿了，可以给我一个苹果吗？'],['I feel sad. Play with me, please!','我有点难过，陪我玩吧！'],['My tummy is rumbling.','我的肚子在咕咕叫。']],
+ ok:[['Hi! How are you today?','嗨！你今天好吗？'],['Let\'s learn some new words!','我们来学新单词吧！'],['What is your favorite color?','你最喜欢什么颜色？'],['Can you say "apple" in English?','你会用英语说“苹果”吗？'],['I like you very much!','我非常喜欢你！']],
+ happy:[['Hooray! I am so happy!','好耶！我好开心！'],['You are my best friend!','你是我最好的朋友！'],['Look at me! I can jump!','看我！我会跳！'],['Great job today!','你今天真棒！'],['Let\'s finish today\'s task together!','我们一起完成今天的任务吧！'],['Thank you for the apples!','谢谢你的苹果！'],['What did you learn today?','你今天学了什么？']]};
+function petSay(en,zh){bubbleText=en;const b=$('#bubble');if(b){b.innerHTML=esc(en)+(zh?`<small class="bzh">${esc(zh)}</small>`:'');b.classList.add('enb')}say(en)}
 function tapPet(){
-  if(stage()===0){anim('wiggle');return setBubble(petLine())}
+  const pick=a=>a[Math.random()*a.length|0];
+  if(stage()===0){anim('wiggle');return petSay(...pick(PET_EN.egg))}
   anim('jump');beep('pop');
   const td=today();
   if(S.giftDay!==td&&!petNight()){S.giftDay=td;
     const can=ITEMS.filter(i=>!i.badge&&!S.owned.includes(i.id));
     if(can.length&&Math.random()<.35){const it=can[Math.random()*can.length|0];S.owned.push(it.id);save();petFx('🎁',2);
-      setBubble(`我在角落里找到了「${it.name}」，送给你！`);toast(`${S.pet.name}送你：${it.ic} ${it.name}`);return setTimeout(renderPet,1600)}
-    const n=3+(Math.random()*4|0);S.food+=n;save();hud();petFx('🍎',3);setBubble(`我捡到了 ${n} 个苹果，送给你！`);return}
-  setBubble(petNight()?'呼…呼…（豆豆在打瞌睡）':['跳一跳！','嘿！看我！','今天也要加油哦！','我想吃苹果～','去完成今日任务吧！'][Math.random()*5|0]);
+      petSay('I found a present for you!',`我在角落里找到了「${it.name}」，送给你！`);toast(`${S.pet.name}送你：${it.ic} ${it.name}`);return setTimeout(renderPet,1600)}
+    const n=3+(Math.random()*4|0);S.food+=n;save();hud();petFx('🍎',3);petSay(`I found ${n} apples for you!`,`我捡到了 ${n} 个苹果，送给你！`);return}
+  petSay(...pick(PET_EN[mood()]||PET_EN.ok));
 }
 /* 小游戏：接苹果，每天 3 次 */
 const GAME_COST=3;
@@ -1645,7 +1957,7 @@ function bindAISettings(){
 async function fillExamples(items){
   const need=items.filter(i=>!hasEx(i)).slice(0,40);if(!need.length)return 0;
   const arr=await aiJSON(`你在帮中国小学生（6-10 岁）背英语单词。请给下面每个单词写一个简单的英文例句和中文翻译。
-要求：句子 4-8 个词，只用小学低年级常见词汇，以一般现在时为主；句子里必须原样出现这个单词（名词可以用复数形式，不要换成别的词形）；中文翻译自然、口语化；每句句式尽量不同；句子结尾有句号、问号或感叹号。
+要求：句子 4-8 个词，只用小学低年级常见词汇，以一般现在时为主；句子里必须原样出现这个单词（名词可以用复数形式，不要换成别的词形）；短语或固定搭配要完整出现，只有第一个动词可以变形；中文翻译自然、口语化；每句句式尽量不同；句子结尾有句号、问号或感叹号。
 只回复一个 JSON 数组，每项 {"en":"单词","ex":"英文例句","zh":"中文翻译"}。例如：[{"en":"apple","ex":"I eat an apple every day.","zh":"我每天吃一个苹果。"}]
 单词列表：
 ${need.map(i=>i.en+' — '+i.zh).join('\n')}`,40000);
@@ -1703,7 +2015,7 @@ function foldCards(){document.querySelectorAll('#view .card').forEach(c=>{const 
   const key=h.textContent.split('·')[0].trim();const d=document.createElement('details');d.className=c.className.replace(/\bstack\b/,'')+' fold';if(openSecs.has(key))d.open=true;
   const sm=document.createElement('summary');sm.appendChild(h);const body=document.createElement('div');body.className='stack foldbody';body.style.gap='12px';
   while(c.firstChild)body.appendChild(c.firstChild);d.append(sm,body);c.replaceWith(d);d.addEventListener('toggle',()=>{d.open?openSecs.add(key):openSecs.delete(key)})})}
-function statusTag(it){const r=S.srs[it.id];if(!r)return '<span class="tag2">未学</span>';if(r.mastered)return '<span class="tag2 m">已掌握</span>';
+function statusTag(it){const r=S.srs[it.id];if(!r)return '<span class="tag2">未学</span>';if(r.mastered)return '<span class="tag2 m">已掌握</span>';if(r.weak)return `<span class="tag2 w">${r.due<=today()?'今天巩固':'巩固中'}</span>`;
   return `<span class="tag2 r">${r.due<=today()?'今天复习':r.due.slice(5).replace('-','/')+' 复习'}</span>`}
 function renderDecks(){
   const m=wordMap();
