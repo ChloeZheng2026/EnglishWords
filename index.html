@@ -286,6 +286,8 @@ rt{ruby-align:center}
 @media (max-width:440px){.ghead h2{font-size:18px}.ghead .chip{font-size:12.5px;padding:3px 8px}.ghead .btn.small{padding:6px 9px}}
 .mic.hold{border-radius:999px;padding:22px 16px;font-size:21px;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:none}
 .mic.hold.on{transform:scale(.97)}
+.rhit{color:var(--leaf,#2e9e5b)} .rmiss{color:#d64532;text-decoration:underline wavy} .rnow{background:var(--sun-soft,#fff3c4);border-radius:8px;padding:2px 6px}
+#zForm .btn,#sayForm .btn{white-space:nowrap;flex:none}
 .sptip{margin-top:10px;font-size:16px;color:var(--ink-soft,#555)} .sptip b{font-family:var(--f-display);font-size:20px;color:var(--coral,#e5533d)}
 .bubble .bzh{display:block;font-size:12px;opacity:.65;font-family:var(--f-zh);margin-top:2px}
 .tag2.w{background:var(--coral-soft);color:#b23b2a}
@@ -441,6 +443,13 @@ function reward(el,n=1){S.food+=n;S.stars+=n;save();hud();if(el)floatAt(el,'+'+n
 function hud(){$('#food').textContent=S.food;$('#streak').textContent=S.streak.n;$('#deckName').textContent=deck()?'· '+deck().name:'';$('#sndBtn').textContent=S.snd?'🔊':'🔇';$('#libBtn').classList.toggle('on',tab==='decks');$('#tabPrac').hidden=!S.showPractice}
 
 /* ================= daily plan ================= */
+
+/* 难度：按使用中的词库自动判断（初中/高中词库 → 初中/高中难度），也可以在设置里手动选 */
+function studyLv(){const v=S.talkLv||'auto';if(v!=='auto')return v;const id=(deck()||{}).id||'';return /^pk_high/.test(id)?'high':/^pk_mid/.test(id)?'mid':'kid'}
+const LVTXT={kid:{who:'中国小学生（6-10 岁）',words:'只用小学低年级常见词汇',len:'5-9 个词',story:'40-80 个词'},
+  mid:{who:'中国初中生（12-15 岁）',words:'用初中常见词汇，可以有简单的从句',len:'8-14 个词',story:'80-120 个词'},
+  high:{who:'中国高中生（15-18 岁）',words:'用高中常见词汇，句式可以丰富一些（从句、非谓语等）',len:'10-18 个词',story:'100-150 个词'}};
+const lvt=()=>LVTXT[studyLv()];
 const WEAK_MAX=10; // 「不会的词」（巩固中 + 今天的新词）最多 10 个
 const weakCount=()=>Object.values(S.srs).filter(r=>r.weak&&!r.mastered&&!r.moved).length;
 const newQuota=()=>Math.max(0,Math.min(S.newPerDay,WEAK_MAX-weakCount()));
@@ -573,34 +582,49 @@ function judgeZhLocal(said,zh){const t=String(said).replace(/[\s，。！？,.!?
     if(M.length>=3){let n=0;for(const c of M)if(T.includes(c))n++;return n/M.length>=.67}return false})}
 async function judgeZh(said,it){if(judgeZhLocal(said,it.zh))return true;if(!aiReady())return false;
   try{const r=await aiJSON(`英文「${it.en}」的中文意思是「${it.zh}」。一个小学生用语音说出了他理解的中文意思，语音识别成文字是：「${said}」（可能有同音字识别错误，要按读音理解）。意思对、意思相近就算对。只回复 JSON：{"ok":true 或 false}`,10000);return !!(r&&r.ok)}catch(e){return false}}
-function zhSayOne(ctx,ui,it,hint,extraHTML){return new Promise(res=>{
+/* 说/写中文的通用题：按住说中文或打字，提交后直接判断；错了显示答案 */
+function zhAnswerOne(ctx,ui,o){return new Promise(res=>{
   if(!alive(ctx))return;let busy=false,rec=null,txt='',over=false;
-  ui.body.innerHTML=`${extraHTML||''}<div class="card prompt"><button class="speaker" id="spk" aria-label="再听一遍">🔊</button>
-    <div class="en">${esc(it.en)}</div><div class="hint">${esc(hint||'这个词是什么意思？用嘴说出中文')}</div></div>
-    <div class="speakbox" style="margin-top:12px">${srOK?'<button class="mic hold" id="zMic" type="button">按住 说中文</button>':''}
+  ui.body.innerHTML=`${o.extraHTML||''}<div class="card prompt"><button class="speaker" id="spk" aria-label="再听一遍">🔊</button>
+    ${o.showHTML}<div class="hint">${esc(o.hint)}</div></div>
+    <div class="speakbox" style="margin-top:12px">${srOK?'<button class="mic hold" id="zMic" type="button">🎤 点一下开始说中文</button>':''}
     <form class="row" id="zForm" style="flex-wrap:nowrap;margin-top:10px"><input type="text" id="zIn" autocomplete="off" placeholder="${srOK?'说的话会出现在这里，也可以打字':'点这里，用键盘上的 🎤 说中文'}"><button class="btn go">提交</button></form>
     <div id="zFb" class="sayfb" hidden></div></div>`;
-  const play=()=>say(it.en);setTimeout(play,150);$('#spk').onclick=play;
+  const play=()=>say(o.sayText);setTimeout(play,150);$('#spk').onclick=play;
+  ui.body.querySelectorAll('.tw').forEach(el=>el.onclick=()=>tapWord(el,el.dataset.tw,o.sayText));
   const fb=$('#zFb'),mic=$('#zMic'),inp=$('#zIn');
   const lock=()=>{over=true;if(mic)mic.disabled=true;inp.disabled=true;$('#zForm button').disabled=true};
   const judge=async said=>{if(busy||over)return;busy=true;fb.hidden=false;fb.className='sayfb';fb.textContent='你说的是：'+said+'　正在判断…';
-    const ok=await judgeZh(said,it);if(!alive(ctx))return;busy=false;lock();
-    if(ok){beep('ok');fb.className='sayfb ok';fb.innerHTML=`✓ 对了！你说：${esc(said)}<br>意思：<b>${esc(it.zh)}</b>`;good(ctx,fb);setTimeout(()=>res(true),1300)}
-    else{beep('bad');addToMyWords(it.en,it.zh,it.ex,it.exZh);fb.className='sayfb no';
-      fb.innerHTML=`你说的是：${esc(said)}<br>正确意思：<b>${esc(it.zh)}</b><br><small>已加入生词本</small><div class="row center" style="margin-top:8px"><button class="btn small sun" id="zNext" type="button">记住了，下一个</button></div>`;
-      say(it.en);$('#zNext').onclick=()=>res(false)}};
+    const ok=await o.judge(said);if(!alive(ctx))return;busy=false;lock();
+    if(ok){beep('ok');fb.className='sayfb ok';fb.innerHTML=`✓ 对了！你说：${esc(said)}<br>${o.label||'意思'}：<b>${esc(o.answer)}</b>`;good(ctx,fb);setTimeout(()=>res(true),o.okDelay||1300)}
+    else{beep('bad');if(o.onWrong)o.onWrong();fb.className='sayfb no';
+      fb.innerHTML=`你说的是：${esc(said)}<br>${o.wrongLabel||'正确意思'}：<b>${esc(o.answer)}</b>${o.wrongNote?`<br><small>${o.wrongNote}</small>`:''}<div class="row center" style="margin-top:8px"><button class="btn small sun" id="zNext" type="button">记住了，下一个</button></div>`;
+      say(o.sayText);$('#zNext').onclick=()=>res(false)}};
   $('#zForm').onsubmit=e=>{e.preventDefault();const v=inp.value.trim();if(v)judge(v)};
   if(mic){
-    const start=e=>{e.preventDefault();if(rec||busy||over)return;try{speechSynthesis.cancel()}catch(_){}txt='';inp.value='';
-      rec=listen(t=>{txt=t;inp.value=t},()=>{rec=null;mic.classList.remove('on');mic.textContent='按住 说中文';
+    const start=()=>{if(busy||over)return;try{speechSynthesis.cancel()}catch(_){}txt='';inp.value='';
+      rec=listen(t=>{txt=t;inp.value=t},()=>{rec=null;mic.classList.remove('on');mic.textContent='🎤 点一下开始说中文';
         if(!srOK){mic.hidden=true;inp.placeholder='点这里，用键盘上的 🎤 说中文';return}
-        if(txt.trim())judge(txt.trim());else toast('没听清，再按住说一次')},true,'zh-CN');
-      if(rec){mic.classList.add('on');mic.textContent='正在听… 说完松手';beep('pop')}else{mic.hidden=true}};
-    const stop=e=>{if(!rec)return;if(e)e.preventDefault();const r=rec;setTimeout(()=>{try{r.stop()}catch(_){}},300);setTimeout(()=>r._finish&&r._finish(),2500)};
-    mic.addEventListener('pointerdown',start);mic.addEventListener('pointerup',stop);mic.addEventListener('pointercancel',stop);mic.addEventListener('pointerleave',stop);
-    mic.addEventListener('contextmenu',e=>e.preventDefault());
+        if(txt.trim())judge(txt.trim());else toast('没听清，再点一下说一次')},true,'zh-CN');
+      if(rec){mic.classList.add('on');mic.textContent='● 正在听… 说完点这里';beep('pop')}else{mic.hidden=true}};
+    const stop=()=>{const r=rec;if(!r)return;mic.textContent='好的，正在识别…';setTimeout(()=>{try{r.stop()}catch(_){}},250);setTimeout(()=>r._finish&&r._finish(),2500)};
+    mic.onclick=e=>{e.preventDefault();if(rec)stop();else start()};
   }
 })}
+function zhSayOne(ctx,ui,it,hint,extraHTML){return zhAnswerOne(ctx,ui,{extraHTML,showHTML:`<div class="en">${esc(it.en)}</div>`,hint:hint||'这个词是什么意思？用嘴说出中文',
+  sayText:it.en,answer:it.zh,judge:said=>judgeZh(said,it),onWrong:()=>addToMyWords(it.en,it.zh,it.ex,it.exZh),wrongNote:'已加入生词本'})}
+/* 翻译句子：说出或写出整句的中文意思，AI 判断 */
+const zhClean=t=>String(t||'').replace(/[\s，。！？、；：,.!?;:“”"'‘’（）()…]/g,'');
+function judgeTransLocal(said,ref){const a=zhClean(said),b=zhClean(ref);if(!a||!b)return false;if(a===b)return true;
+  let n=0;for(const c of new Set(b))if(a.includes(c))n++;return n/new Set(b).size>=.7&&a.length>=b.length*.6&&a.length<=b.length*1.8}
+async function judgeTrans(said,it){if(judgeTransLocal(said,it.exZh))return true;if(!aiReady())return false;
+  try{const r=await aiJSON(`一个小学生在把英文句子翻译成中文。
+英文：${it.ex}
+参考翻译：${it.exZh}
+孩子的翻译（语音识别成文字，可能有同音字错误，要按读音理解）：${said}
+意思基本正确、关键词没翻错就算对，不要求和参考翻译一样，语序、用词不同都可以。只回复 JSON：{"ok":true 或 false}`,12000);return !!(r&&r.ok)}catch(e){return false}}
+function transOne(ctx,ui,it){return zhAnswerOne(ctx,ui,{showHTML:`<div class="sent">${hl(it)}</div>`,hint:'把这句话翻译成中文，说出来或写出来',
+  sayText:it.ex,answer:it.exZh,label:'参考翻译',wrongLabel:'参考翻译',judge:said=>judgeTrans(said,it),okDelay:1800})}
 /* 看英文说中文：全部说一轮 → 错的词反复练到全对 → 所有错过的词每个再练 5 遍（打乱，练错再加一遍） */
 const ZH_N=5;
 async function zhSayStep(ctx,list){
@@ -627,17 +651,17 @@ async function zhSayRound(ctx,list,label){
 
 /* --- 听音拼写 --- */
 /* 听音拼写一个词：返回是否第一次就拼对；错两次显示答案 */
-function spellOne(ctx,ui,it,extraHTML){return new Promise(res=>{
-  if(!alive(ctx))return;
-  const chars=[...it.en.toLowerCase()],need=chars.filter(c=>c!==' ');
+function spellOne(ctx,ui,it,extraHTML,opt){return new Promise(res=>{
+  if(!alive(ctx))return;opt=opt||{};const W=opt.word||it.en;
+  const chars=[...W.toLowerCase()],need=chars.filter(c=>c!==' ');
   const alpha='abcdefghijklmnopqrstuvwxyz',extra=[];while(extra.length<Math.min(3,Math.max(2,Math.ceil(need.length/3))))extra.push(alpha[Math.random()*26|0]);
   const tiles=shuffle(need.concat(extra));let filled=[],tries=0,busy=false;
   ui.body.innerHTML=`${extraHTML||''}<div class="card prompt"><button class="speaker" id="spk" aria-label="再听一遍">🔊</button>
-    <div class="hint">听读音，拼出这个单词 · ${need.length} 个字母</div><button class="linkbtn" id="zhh">看中文提示</button><div class="reveal" id="zhv" hidden style="font-family:var(--f-zh)">${esc(it.zh)}</div>
+    <div class="hint">${esc(opt.hint||'听读音，拼出这个单词')} · ${need.length} 个字母</div><button class="linkbtn" id="zhh">看中文提示</button><div class="reveal" id="zhv" hidden style="font-family:var(--f-zh)">${esc(it.zh)}</div>
     <div class="slots" id="slots" style="margin-top:14px"></div><div class="sptip" id="spTip" hidden></div></div>
     <div class="letters">${tiles.map((c,k)=>`<button class="letter" data-k="${k}">${esc(c)}</button>`).join('')}</div>
     <div class="row center" style="margin-top:16px"><button class="btn" id="back">⌫ 退格</button></div>`;
-  const play=()=>say(it.en);setTimeout(play,150);$('#spk').onclick=play;
+  const play=()=>say(opt.sayText||W);setTimeout(play,150);$('#spk').onclick=play;
   $('#zhh').onclick=()=>{$('#zhv').hidden=false;$('#zhh').hidden=true};
   function draw(cls){let n=0;$('#slots').innerHTML=chars.map(c=>{if(c===' ')return '<span class="slot gap"></span>';const f=filled[n++];return `<span class="slot ${f?'filled':''} ${cls||''}">${f?esc(f.c):''}</span>`}).join('')}
   draw();
@@ -648,12 +672,12 @@ function spellOne(ctx,ui,it,extraHTML){return new Promise(res=>{
   keyH=e=>{if(!document.querySelector('.letters'))return;if(e.key==='Backspace'){e.preventDefault();undo();return}const k=e.key.toLowerCase();if(k.length!==1)return;const b=btns.find(x=>!x.classList.contains('used')&&tiles[+x.dataset.k]===k);if(b)put(b)};
   function check(){
     busy=true;
-    if(filled.map(f=>f.c).join('')===need.join('')){draw('right');beep('ok');say(it.en);if(tries===0)good(ctx,$('#slots'));setTimeout(()=>res(tries===0),1100)}
+    if(filled.map(f=>f.c).join('')===need.join('')){draw('right');beep('ok');say(W);if(tries===0)good(ctx,$('#slots'));setTimeout(()=>res(tries===0),1100)}
     else{tries++;beep('bad');$('#slots').classList.add('bad');
       /* 拼错：先显示正确拼法和中文，记一记，再盖住重新默写，直到拼对 */
       setTimeout(()=>{$('#slots').classList.remove('bad');filled.forEach(f=>f.b&&f.b.classList.remove('used'));
-        filled=need.map(c=>({c}));draw('reveal-ans');$('#zhv').hidden=false;$('#zhh').hidden=true;say(it.en);
-        const tip=$('#spTip');tip.hidden=false;tip.innerHTML=`正确拼法：<b>${esc(it.en)}</b>，记住它，马上盖住重新默写`;
+        filled=need.map(c=>({c}));draw('reveal-ans');$('#zhv').hidden=false;$('#zhh').hidden=true;say(W);
+        const tip=$('#spTip');tip.hidden=false;tip.innerHTML=`正确拼法：<b>${esc(W)}</b>，记住它，马上盖住重新默写`;
         setTimeout(()=>{if(!alive(ctx))return;filled=[];draw();$('#zhv').hidden=true;$('#zhh').hidden=false;tip.innerHTML='凭记忆再默写一遍';busy=false;play()},2800)},500)}
   }
 })}
@@ -709,20 +733,67 @@ function fillRound(ctx,list,label){return new Promise(res=>{
   q();
 })}
 
+/* 句子补全：全部做一轮；填错的句子每句先把正确的词拼写一遍，再把整句翻译成中文（判断对错） */
+async function fillStep(ctx,list){
+  const wrong=await fillRound(ctx,list,`第 1 轮 · 全部 ${list.length} 个`);if(!alive(ctx))return;
+  wrong.forEach(id=>markMiss(ctx,id));if(!wrong.size)return;
+  const ws=list.filter(x=>wrong.has(x.id));
+  await pause(ctx,`有 ${ws.length} 句填错了`,chips(wrong)+'<p>每句先把空里的词<b>拼写一遍</b>，再把整句<b>翻译成中文</b>。</p>','开始');if(!alive(ctx))return;
+  for(let k=0;k<ws.length;k++){const it=ws[k],sp=splitBlank(it);
+    let ui=roundUI(ctx,`错句 ${k+1}/${ws.length} · 拼写`);ui.prog(k/ws.length);
+    await spellOne(ctx,ui,it,`<div class="card prompt" style="margin-bottom:12px"><div class="sent">${esc(sp.before)}<span class="blank">？</span>${esc(sp.after)}</div></div>`,{word:sp.form,hint:'把空里的词拼出来',sayText:sp.form});
+    keyH=null;if(!alive(ctx))return;
+    ui=roundUI(ctx,`错句 ${k+1}/${ws.length} · 翻译`);ui.prog((k+.5)/ws.length);
+    const ok=await transOne(ctx,ui,it);if(!alive(ctx))return;if(!ok)markMiss(ctx,it.id)}
+}
+
 /* --- 跟读三遍 --- */
 function hl(it){const sp=splitBlank(it);return wordSpans(sp.before)+'<mark>'+esc(sp.form)+'</mark>'+wordSpans(sp.after)}
+/* 跟读：每句读 3 遍，每遍先读英文再读中文。点一下开始，英文读完会自动转到中文，读完自动判断（也可以再点一下结束） */
+function enWordsHit(said,ref){const want=normEn(ref).split(' ').filter(Boolean),got=normEn(said).split(' ').filter(Boolean);const used=new Set();
+  const hit=want.map(w=>{const k=got.findIndex((g,j)=>!used.has(j)&&(g===w||(w.length>=4&&lev(g,w)<=1)||(w.length>=7&&lev(g,w)<=2)));if(k>=0){used.add(k);return true}return false});
+  return {want,hit,score:want.length?hit.filter(Boolean).length/want.length:0}}
+function zhHit(said,ref){const b=[...new Set(zhClean(ref))],a=zhClean(said);if(!b.length)return 1;return b.filter(c=>a.includes(c)).length/b.length}
+const READ_EN=.8,READ_ZH=.7;
 function readPass(ctx,list){return new Promise(res=>{
   const ui=roundUI(ctx,`${list.length} 个句子 · 每句 3 遍`);let i=0;
   function q(){
     if(!alive(ctx))return;if(i>=list.length)return res(new Set());ui.prog(i/list.length);
-    const it=list[i];let n=0;
-    ui.body.innerHTML=`<div class="card prompt"><div class="sent">${hl(it)}</div><div class="hint" style="font-size:18px">${esc(it.exZh)}</div>
+    const it=list[i];let n=0,fails=0,rec=null,phase='',enTxt='',zhTxt='',done=false;
+    ui.body.innerHTML=`<div class="card prompt"><div class="sent" id="rEn">${hl(it)}</div><div class="hint" id="rZh" style="font-size:19px;color:var(--ink)">${esc(it.exZh)}</div>
       <div class="rdots" id="rd"><span></span><span></span><span></span></div>
-      <div class="row center"><button class="btn" id="spk">🔊 听一遍</button><button class="btn go" id="did">我读完第 1 遍</button></div>
-      <p class="hint">先听一遍，再看着句子大声跟读</p></div>`;
-    setTimeout(()=>say(it.ex),200);$('#spk').onclick=()=>say(it.ex);
-    $('#did').onclick=()=>{n++;$('#rd').children[n-1].classList.add('on');beep('pop');
-      if(n>=3){$('#did').disabled=true;good(ctx,$('#did'));i++;setTimeout(q,800)}else{$('#did').textContent=`我读完第 ${n+1} 遍`;say(it.ex)}};
+      <div class="row center"><button class="btn" id="spk">🔊 英文</button><button class="btn" id="spkz">🔊 中文</button></div></div>
+      <div class="speakbox" style="margin-top:12px">${srOK?'<button class="mic hold" id="rMic" type="button">🎤 点一下开始读</button>':'<div class="row center"><button class="btn go" id="did">我读完第 1 遍</button></div>'}
+      <p class="hint center" id="rTip" style="margin:8px 0 0">先听一遍，再大声读：<b>先读英文，再读中文</b>。${srOK?'英文读完会自动换成中文。':''}</p>
+      <div id="rFb" class="sayfb" hidden></div></div>`;
+    ui.body.querySelectorAll('#rEn .tw').forEach(el=>el.onclick=()=>tapWord(el,el.dataset.tw,it.ex));
+    setTimeout(()=>say(it.ex),200);$('#spk').onclick=()=>say(it.ex);$('#spkz').onclick=()=>say(it.exZh,'zh');
+    const dot=()=>{if(done||n>=3)return true;n++;$('#rd').children[n-1].classList.add('on');beep('ok');if(n>=3){done=true;const dd=$('#did');if(dd)dd.disabled=true;good(ctx,$('#rd'));i++;setTimeout(q,1200);return true}return false};
+    if(!srOK){$('#did').onclick=()=>{if(!dot())$('#did').textContent=`我读完第 ${n+1} 遍`};return}
+    const mic=$('#rMic'),fb=$('#rFb'),tip=$('#rTip');
+    const showEn=()=>{const r=enWordsHit(enTxt,it.ex);const toks=it.ex.split(/\s+/);let k=0;
+      $('#rEn').innerHTML=toks.map(t=>{const has=/[A-Za-z0-9]/.test(t);const ok=has?r.hit[k++]:true;return `<span class="${phase?'':''}${has&&(phase==='zh'||phase==='end')&&!ok?'rmiss':has&&ok&&enTxt?'rhit':''}">${esc(t)}</span>`}).join(' ');return r};
+    const finish=()=>{phase='end';mic.disabled=false;mic.classList.remove('on');
+      const er=showEn(),zs=zhHit(zhTxt,it.exZh),ok=er.score>=READ_EN&&zs>=READ_ZH;fb.hidden=false;
+      const miss=er.want.filter((w,k)=>!er.hit[k]);
+      if(ok){fb.className='sayfb ok';fb.innerHTML=`✓ 读得好！英文 ${Math.round(er.score*100)} 分，中文 ${Math.round(zs*100)} 分`;fails=0;
+        if(!dot()){mic.textContent=`🎤 点一下读第 ${n+1} 遍`;setTimeout(()=>{if(!done&&phase==='end')$('#rEn').innerHTML=hl(it)},1500)}else mic.disabled=true}
+      else{fails++;beep('bad');fb.className='sayfb no';
+        fb.innerHTML=`${er.score<READ_EN?`英文没读准或没读完${miss.length?'：<b>'+esc(miss.slice(0,6).join(' '))+'</b>':''}<br>`:''}${zs<READ_ZH?`中文${zhTxt?'没读完整':'没有读'}：${esc(it.exZh)}<br>`:''}<small>听到的：${esc(enTxt||'（没听到英文）')} / ${esc(zhTxt||'（没听到中文）')}</small>
+          ${fails>=3?'<div class="row center" style="margin-top:8px"><button class="btn small sun" id="rSkip" type="button">这一遍先算过，下一遍</button></div>':''}`;
+        mic.textContent=`🎤 再读一次第 ${n+1} 遍`;const sk=$('#rSkip');if(sk)sk.onclick=()=>{markMiss(ctx,it.id);fails=0;fb.hidden=true;if(!dot())mic.textContent=`🎤 点一下读第 ${n+1} 遍`}}};
+    const startZh=()=>{phase='zh';tip.innerHTML='现在读中文：<b>'+esc(it.exZh)+'</b>（读完点一下）';$('#rZh').classList.add('rnow');
+      rec=listen(t=>{zhTxt=t;if(zhHit(t,it.exZh)>=.9&&rec){const r=rec;setTimeout(()=>{try{r.stop()}catch(_){}},400)}},()=>{rec=null;$('#rZh').classList.remove('rnow');tip.innerHTML='先读英文，再读中文。英文读完会自动换成中文。';finish()},true,'zh-CN');
+      if(!rec)finish()};
+    const startEn=()=>{try{speechSynthesis.cancel()}catch(_){}enTxt='';zhTxt='';fb.hidden=true;phase='en';$('#rEn').innerHTML=hl(it);
+      mic.classList.add('on');mic.textContent='● 正在听… 读完点这里';tip.innerHTML='先读英文：大声读上面的句子';beep('pop');
+      rec=listen(t=>{enTxt=t;const r=showEn();if(r.score>=.95&&rec){const x=rec;setTimeout(()=>{try{x.stop()}catch(_){}},400)}},()=>{rec=null;
+        if(!srOK){mic.hidden=true;tip.textContent='这里用不了语音，读完点下面的按钮';ui.body.querySelector('.speakbox').insertAdjacentHTML('beforeend','<div class="row center"><button class="btn go" id="did">我读完这一遍</button></div>');$('#did').onclick=()=>dot();return}
+        if(phase==='en')startZh()},true,'en-US');
+      if(!rec){mic.classList.remove('on');phase=''}};
+    mic.onclick=e=>{e.preventDefault();if(done)return;
+      if(rec){const r=rec;mic.textContent=phase==='en'?'● 正在听中文… 读完点这里':'好的，正在判断…';setTimeout(()=>{try{r.stop()}catch(_){}},250);setTimeout(()=>r._finish&&r._finish(),2500);return}
+      if(phase===''||phase==='end')startEn()};
   }
   q();
 })}
@@ -846,8 +917,72 @@ function patCue(p,x){
   if(p.num)return `<div class="apples">${'🍎'.repeat(p.num[x[0]])}</div>`;
   return '';
 }
-function patById(id){id=String(id);return id[0]==='c'?(S.myPats||[]).find(p=>p.id===id):PATTERNS[+id]}
-function allPatIds(){return (S.myPats||[]).map(p=>p.id).concat(PATTERNS.map((p,i)=>String(i)))}
+/* --- 初中 / 高中难度的每日对话：每行「问句|参考回答|话题」 --- */
+const MID_TALK=`What do you usually do on weekends?|I usually read books and play basketball with my friends.|周末
+How do you usually get to school?|I usually take the bus, and it takes about twenty minutes.|上学
+What is your favorite subject and why?|My favorite subject is science because the experiments are interesting.|学科
+What did you do last weekend?|I visited my grandparents and helped them cook dinner.|过去的事
+What are you going to do this summer vacation?|I am going to travel to Beijing with my family.|计划
+How often do you exercise?|I exercise three times a week, usually after school.|频率
+What do you want to be when you grow up?|I want to be a doctor because I want to help sick people.|理想
+Can you describe your best friend?|She is kind and funny, and she always helps me with my homework.|描述人
+What kind of music do you like?|I like pop music because it makes me feel relaxed.|爱好
+Have you ever been to another city?|Yes, I have been to Shanghai. It was really exciting.|经历
+What is the weather like in your hometown?|It is hot and rainy in summer, but quite cold in winter.|天气
+How long have you studied English?|I have studied English for about six years.|现在完成时
+What do you think of online classes?|I think they are convenient, but it is hard to stay focused.|看法
+What should we do to protect the environment?|We should save water, recycle rubbish and take the bus more often.|环保
+What would you do if you found a wallet on the street?|I would give it to the police so they can find the owner.|假设
+Which do you prefer, reading books or watching movies?|I prefer reading books because I can imagine the story myself.|比较
+What is the most important thing you learned this year?|I learned that I should never give up when things get hard.|反思
+How do you deal with stress before exams?|I make a study plan and go for a run to relax.|压力
+Could you tell me the way to the nearest bookstore?|Go straight and turn left at the second crossing. It is next to the bank.|问路
+What do you usually do to help at home?|I wash the dishes and clean my room every day.|家务
+Why do you think it is important to learn English?|Because English helps us talk with people from all over the world.|原因
+What was the best gift you have ever received?|It was a bike from my parents on my twelfth birthday.|经历
+What do you like to do when you are free?|I like drawing pictures and listening to music.|爱好
+How did you celebrate the Spring Festival this year?|We had a big family dinner and watched fireworks together.|节日
+What are the advantages of having a pet?|A pet can make you happy and teach you to be responsible.|观点
+Who is the person you admire most?|I admire my mother most because she works hard and is always patient.|人物
+What would you like to change about your school?|I would like to have a bigger library and more after-school clubs.|愿望
+How much time do you spend on your phone every day?|I spend about one hour a day, mostly chatting with friends.|习惯
+What did you have for breakfast this morning?|I had some bread, an egg and a glass of milk.|过去的事
+Do you think students should wear school uniforms?|Yes, I think uniforms make everyone feel equal.|观点`;
+const HIGH_TALK=`What do you think is the biggest challenge for teenagers today?|I think the biggest challenge is balancing schoolwork with personal interests.|观点
+How has technology changed the way people communicate?|Technology allows us to stay in touch instantly, but face-to-face talks have become less common.|科技
+If you could live in any country, where would you choose and why?|I would choose Canada because it has beautiful nature and a relaxed lifestyle.|假设
+What is a book that has influenced you deeply?|To Live by Yu Hua influenced me a lot, because it taught me to value life.|阅读
+Do you think social media does more harm than good?|It depends on how we use it; it can spread knowledge but also waste a lot of time.|辩论
+How do you usually manage your time when you have a lot of homework?|I list my tasks by priority and finish the most difficult ones first.|学习方法
+What qualities make a good leader?|A good leader should be responsible, listen to others and make clear decisions.|品质
+What would you do if your friend asked you to cheat in an exam?|I would refuse politely and offer to help him review after school.|假设
+Which invention do you think is the most important in history?|I think the internet is the most important, because it has connected the whole world.|科技
+How can we reduce the pressure of the college entrance exam?|We could make a reasonable plan, get enough sleep and talk to people we trust.|压力
+What is the value of volunteering?|Volunteering helps others and also makes us more caring and responsible.|社会
+Should high school students have part-time jobs?|I think a short part-time job in the holidays can teach us the value of money.|辩论
+What changes would you like to see in your city in ten years?|I hope there will be more parks and cleaner public transport.|未来
+Describe an experience that made you more confident.|Giving a speech in front of the whole school made me much more confident.|经历
+What do you think of artificial intelligence?|AI makes our life more convenient, but we should use it carefully and think for ourselves.|科技
+Why do you think traditional culture is worth protecting?|Traditional culture shows who we are and connects us with our history.|文化
+How do you usually solve disagreements with your parents?|I try to stay calm, explain my reasons and listen to their opinions too.|家庭
+What does success mean to you?|To me, success means doing what I love and making progress every day.|价值观
+What is the most effective way to learn a foreign language?|I believe using the language every day, such as reading and speaking, works best.|学习方法
+If you were the headmaster, what would you change first?|I would give students more time for sports and clubs.|假设
+What environmental problem worries you most?|Plastic pollution worries me most because it harms animals in the ocean.|环保
+How do you think online shopping affects small shops?|It makes things cheaper for buyers, but many small shops are losing customers.|社会
+What have you learned from a mistake you made?|I learned that I should prepare carefully instead of leaving things until the last minute.|反思
+Would you rather study in a big city or a small town?|I would rather study in a big city because there are more opportunities.|比较
+What role do friends play in your life?|Friends support me when I am down and share happiness with me.|人际
+Do you agree that hard work is more important than talent?|Yes, because talent without hard work rarely leads to success.|辩论
+What kind of job do you think will be popular in the future?|Jobs related to technology and health care will probably be very popular.|未来
+How would you introduce your hometown to a foreign visitor?|I would show him the old streets, the local food and the famous lake.|介绍
+What is the best advice you have ever received?|My teacher told me to focus on progress, not perfection.|经历
+How do you keep a healthy lifestyle during busy school days?|I try to eat balanced meals, exercise for half an hour and sleep before eleven.|健康`;
+
+const LVPATS={};function lvPats(k){if(!LVPATS[k])LVPATS[k]=(k==='m'?MID_TALK:HIGH_TALK).split('\n').map((l,i)=>{const [q,a,t]=l.split('|');return {id:k+i,custom:true,builtin:true,t:t||q,q,a,xs:[['','']]}});return LVPATS[k]}
+function patById(id){id=String(id);const c=id[0];return c==='c'?(S.myPats||[]).find(p=>p.id===id):c==='m'||c==='h'?lvPats(c)[+id.slice(1)]:PATTERNS[+id]}
+function allPatIds(){const my=(S.myPats||[]).map(p=>p.id),kid=PATTERNS.map((p,i)=>String(i)),m=lvPats('m').map(p=>p.id),h=lvPats('h').map(p=>p.id),lv=studyLv();
+  return my.concat(lv==='high'?h.concat(m,kid):lv==='mid'?m.concat(h,kid):kid.concat(m,h))}
 function patPlan(){const t=today();S.pats=S.pats||{};
   const rev=Object.entries(S.pats).filter(([i,r])=>!r.mastered&&r.due<=t&&patById(i)).sort((a,b)=>a[1].due<b[1].due?-1:a[1].due>b[1].due?1:0).slice(0,6).map(e=>e[0]);
   const nw=allPatIds().filter(i=>!S.pats[i]).slice(0,3);return {patRev:rev,patNew:nw}}
@@ -918,7 +1053,7 @@ function patListHTML(){S.pats=S.pats||{};
   return `<div class="items">${ids.map(i=>{const p=patById(i),r=S.pats[i];return `<div class="item"><button class="iconbtn" data-say="${esc(p.q)}" aria-label="朗读">🔊</button>
     <div class="t"><b>${esc(p.q)}</b><span>${esc(patAns(p,p.xs[0]))}</span></div>
     ${!r?'<span class="tag2">待学</span>':r.mastered?'<span class="tag2 m">已掌握</span>':`<span class="tag2 r">${r.due<=today()?'今天考':r.due.slice(5).replace('-','/')+' 考'}</span>`}
-    ${p.custom?`<button class="btn small" data-delpat="${esc(p.id)}" aria-label="删除">✕</button>`:''}</div>`}).join('')}</div>`}
+    ${p.custom&&!p.builtin?`<button class="btn small" data-delpat="${esc(p.id)}" aria-label="删除">✕</button>`:''}</div>`}).join('')}</div>`}
 /* 导入对话问句：每行「问句 | 回答」，也可以「问句? 回答」 */
 function parseDialog(text){const out=[];
   for(let l of text.split(/\r?\n/)){l=l.trim();if(!l||l.startsWith('#'))continue;let q,a,t='';
@@ -961,7 +1096,7 @@ function judgeLocal(said,refs,res){const n=normEn(said);
 async function judgeSpeech(o){
   const local=judgeLocal(o.said,o.refs,o.res);
   if(local.ok||!aiReady())return local;
-  try{const r=await aiJSON(`你是一位耐心的少儿英语老师，正在检查一个中国小学生（6-10 岁）说的英语。孩子是用语音说的，转成文字后可能有小的识别误差、没有标点或大小写，这些不算错。
+  try{const r=await aiJSON(`你是一位耐心的少儿英语老师，正在检查一个${lvt().who}说的英语。孩子是用语音说的，转成文字后可能有小的识别误差、没有标点或大小写，这些不算错。
 情景：${o.situation}
 参考说法：${o.refs.join(' / ')}
 ${o.must?'要求：'+o.must+'\n':''}孩子说的是："${o.said}"
@@ -971,7 +1106,7 @@ ${o.must?'要求：'+o.must+'\n':''}孩子说的是："${o.said}"
   }catch(e){return local}
 }
 function speakBoxHTML(){return `<div class="speakbox">
-  ${srOK?'<button class="mic hold" id="micBtn" type="button">按住 说话</button><p class="hint center" id="holdTip" style="margin:6px 0 0">像微信语音一样：按住说英语，说完松手</p>':''}
+  ${srOK?'<button class="mic hold" id="micBtn" type="button">🎤 点一下开始说</button><p class="hint center" id="holdTip" style="margin:6px 0 0">点一下开始说英语，说完再点一下</p>':''}
   <form class="row" id="sayForm" style="flex-wrap:nowrap;margin-top:10px"><input type="text" id="sayIn" autocomplete="off" autocapitalize="sentences" placeholder="${srOK?'说的话会出现在这里，也可以打字':'点这里，用键盘上的 🎤 说英语'}"><button class="btn go">提交</button></form>
   <p class="hint" id="kbTip" style="margin:6px 0 0" ${srOK?'hidden':''}>点输入框，切换到英文键盘，再点键盘上的 🎤 说话，说完点「提交」。想用「按住说话」，要用 Safari 打开网址版。</p>
   <div id="sayFb" class="sayfb" hidden></div></div>`}
@@ -979,13 +1114,12 @@ function bindSpeakBox(onSubmit){
   const inp=$('#sayIn'),mic=$('#micBtn');let rec=null,txt='';
   const off=()=>{if(mic)mic.hidden=true;const h=$('#holdTip');if(h)h.hidden=true;const t=$('#kbTip');if(t)t.hidden=false;inp.placeholder='点这里，用键盘上的 🎤 说英语'};
   if(mic){
-    const start=e=>{e.preventDefault();if(rec)return;try{speechSynthesis.cancel()}catch(_){}txt='';inp.value='';
-      rec=listen(t=>{txt=t;inp.value=t},()=>{rec=null;mic.classList.remove('on');mic.textContent='按住 说话';if(!srOK)return off();
-        if(txt.trim())onSubmit(txt.trim());else toast('没听清，再按住说一次')},true);
-      if(rec){mic.classList.add('on');mic.textContent='正在听… 说完松手';beep('pop')}else off()};
-    const stop=e=>{if(!rec)return;if(e)e.preventDefault();const r=rec;setTimeout(()=>{try{r.stop()}catch(_){}},300);setTimeout(()=>r._finish&&r._finish(),2500)};
-    mic.addEventListener('pointerdown',start);mic.addEventListener('pointerup',stop);mic.addEventListener('pointercancel',stop);mic.addEventListener('pointerleave',stop);
-    mic.addEventListener('contextmenu',e=>e.preventDefault());
+    const start=()=>{try{speechSynthesis.cancel()}catch(_){}txt='';inp.value='';
+      rec=listen(t=>{txt=t;inp.value=t},()=>{rec=null;mic.classList.remove('on');mic.textContent='🎤 点一下开始说';if(!srOK)return off();
+        if(txt.trim())onSubmit(txt.trim());else toast('没听清，再点一下说一次')},true);
+      if(rec){mic.classList.add('on');mic.textContent='● 正在听… 说完点这里';beep('pop')}else off()};
+    const stop=()=>{const r=rec;if(!r)return;mic.textContent='好的，正在识别…';setTimeout(()=>{try{r.stop()}catch(_){}},250);setTimeout(()=>r._finish&&r._finish(),2500)};
+    mic.onclick=e=>{e.preventDefault();if(rec)stop();else start()};
   }
   $('#sayForm').onsubmit=e=>{e.preventDefault();const v=inp.value.trim();if(v)onSubmit(v)};
 }
@@ -1039,27 +1173,49 @@ function genStory(list){const g=S.day&&S.day.gen;if(!g||!g.story)return null;
   for(const h of hits){if(h.idx<end)continue;out.push({it:h.it,form:h.form,before:g.story.slice(end,h.idx),after:''});end=h.idx+h.form.length}
   if(out.length<2||out.length<list.length*0.6)return null;
   out[out.length-1].after=g.story.slice(end);return {blanks:out,text:g.story}}
-async function ensureGen(ctx){
-  const d=S.day;if(ctx.mode!=='day'||!d||d.gen||!aiReady())return;
-  $('#gbody').innerHTML=`<div class="card result stack"><div class="ptitle">${esc(S.pet.name)}正在编新句子…</div><p>今天的句子补全和完形填空，由 AI 用今天的单词现编，每天都不一样。一般十几秒就好。</p>
-    <div class="row center"><button class="btn small" id="genSkip">不等了，用词库里的例句</button></div></div>`;
-  const items=ctx.items;let skip;const skipP=new Promise(ok=>{skip=ok});$('#genSkip').onclick=()=>skip('skip');
-  const noEx=items.filter(i=>!hasEx(i));
-  if(noEx.length&&!d.exTried){d.exTried=true;save();try{await Promise.race([skipP,fillExamples(noEx)])}catch(e){}if(!alive(ctx))return}
-  try{
-    const r=await Promise.race([skipP.then(()=>{throw {code:'skipped'}}),aiJSON(`你在帮中国小学生（6-10 岁）复习英语单词。今天的单词：
+/* 第二道把关：让 AI 检查每个干扰词放进空里是否也说得通，说得通的去掉 */
+async function verifyFill(sent,items){
+  const qs=items.map(it=>{const g=sent[it.id];if(!g)return null;const c={...it,ex:g.ex};if(!hasEx(c))return null;const sp=splitBlank(c);return {id:it.id,q:sp.before+'___'+sp.after,ans:sp.form,opts:g.wrong}}).filter(Boolean);
+  if(!qs.length)return;
+  const r=await aiJSON(`下面是给小学生做的英语选词填空题，每题只能有一个正确答案。请逐题检查干扰选项：把某个干扰选项放进 ___，如果语法正确、意思也说得通（哪怕没有正确答案自然），就把它列出来。
+${qs.map((x,i)=>`${i}. ${x.q}　正确答案：${x.ans}　干扰选项：${x.opts.join(' / ')}`).join('\n')}
+只回复 JSON：{"bad":[{"i":题号,"opts":["说得通的干扰选项"]}]}；没有问题就回复 {"bad":[]}`,30000);
+  for(const b of (r&&r.bad)||[]){const x=qs[+b.i];if(!x||!Array.isArray(b.opts))continue;const no=new Set(b.opts.map(v=>String(v).trim().toLowerCase()));
+    sent[x.id].wrong=sent[x.id].wrong.filter(w=>!no.has(String(w).trim().toLowerCase()))}}
+/* 提前编句子：开始今天的任务时就在后台让 AI 编好，做到句子补全时一般已经好了，不用等 */
+let GEN={d:null,p:null};
+function genJob(items){const d=S.day;if(!d||d.gen||!aiReady())return null;if(GEN.d===d&&GEN.p)return GEN.p;GEN.d=d;
+  GEN.p=(async()=>{
+    const noEx=items.filter(i=>!hasEx(i));
+    if(noEx.length&&!d.exTried){d.exTried=true;save();try{await fillExamples(noEx)}catch(e){}}
+    try{
+      const r=await aiJSON(`你在帮${lvt().who}复习英语单词。今天的单词：
 ${items.map(i=>`${i.en}（${i.zh}）`).join('\n')}
 请完成两件事：
-1. 给每个单词写一个新的简单英文句子：5-9 个词，只用小学低年级常见词汇；句子里必须原样出现这个单词（名词可以用复数），不要换成别的词形；如果是短语或固定搭配（比如 look forward to），句子里要完整出现这个短语，只有第一个动词可以变形（took care of），one's 可以换成 my/his 等；附中文翻译。
+1. 给每个单词写一个新的英文句子：${lvt().len}，${lvt().words}；句子里必须原样出现这个单词（名词可以用复数），不要换成别的词形；如果是短语或固定搭配（比如 look forward to），句子里要完整出现这个短语，只有第一个动词可以变形（took care of），one's 可以换成 my/his 等；附中文翻译。
    这些句子要拿来做填空题：把这个单词挖掉后，句子里必须有明确的线索，让孩子只能填这一个词（比如 The panda eats bamboo. / The cat says meow.），不能是 The ___ is under the table. 这种填什么都通的句子。
-   再给每个句子 3 个干扰词 wrong：小学生认识的英文单词，但放进空里明显不对、读不通；如果是短语，干扰项也给短语。不要和这些已有句子重复：${items.map(i=>i.ex).filter(Boolean).join(' / ')||'无'}
-2. 用上面全部单词编一个连贯、有趣的小短文：40-80 个词，适合小学生读；每个单词至少原样出现一次（名词可以用复数）；附中文翻译。
+   再给每个句子 6 个干扰词 wrong（如果是短语，干扰项也给短语）。干扰词放进空里必须明显错误：语法不通或意思荒谬，最好和答案词性不同（动词空可以给名词、形容词）。
+   绝对不能给同一类、放进去也说得通的词：比如答案是 always，不能给 often/never/usually；答案是 visit，不能给 call/miss/help；答案是 fly，不能给 jump/sing/run。
+   句子本身也要有线索：不要写 My cat always eats fish 这种换成 often/never 也通的句子，可以写 My cat eats fish every day. It always wants more!不要和这些已有句子重复：${items.map(i=>i.ex).filter(Boolean).join(' / ')||'无'}
+2. 用上面全部单词编一个连贯、有趣的小短文：${lvt().story}，${lvt().words}；每个单词至少原样出现一次（名词可以用复数）；附中文翻译。
    短文是完形填空：这些单词会被挖掉，所以每个单词所在的地方都要有明确线索，让孩子能判断只能填哪一个（比如 a panda eating bamboo、a rabbit with long ears），不要写成 a cat and a dog 这种可以互换的。
-只回复 JSON：{"sentences":[{"en":"单词","ex":"英文句子","zh":"中文翻译","wrong":["干扰词1","干扰词2","干扰词3"]}],"story":"英文短文","storyZh":"短文的中文翻译"}`,45000)]);
-    if(!alive(ctx))return;
-    const sent={};for(const s of (r&&r.sentences)||[]){const it=items.find(i=>i.en.toLowerCase()===String(s.en||'').trim().toLowerCase());if(it&&s.ex)sent[it.id]={ex:String(s.ex).trim(),zh:String(s.zh||'').trim(),wrong:Array.isArray(s.wrong)?s.wrong.map(String).slice(0,3):[]}}
-    d.gen={sent,story:String((r&&r.story)||'').trim(),storyZh:String((r&&r.storyZh)||'').trim()};save();
-  }catch(e){if(!alive(ctx))return;d.gen={sent:{},failed:true};save();if(!(e&&e.code==='skipped'))toast(e&&e.code==='timeout'?'AI 编得太慢，先用词库里的例句':'AI 暂时没编出来，先用词库里的例句')}
+只回复 JSON：{"sentences":[{"en":"单词","ex":"英文句子","zh":"中文翻译","wrong":["干扰词1","干扰词2","干扰词3"]}],"story":"英文短文","storyZh":"短文的中文翻译"}`,45000);
+      const sent={};for(const s of (r&&r.sentences)||[]){const it=items.find(i=>i.en.toLowerCase()===String(s.en||'').trim().toLowerCase());if(it&&s.ex)sent[it.id]={ex:String(s.ex).trim(),zh:String(s.zh||'').trim(),wrong:Array.isArray(s.wrong)?s.wrong.map(String).slice(0,6):[]}}
+      try{await verifyFill(sent,items)}catch(e){}
+      for(const k in sent)sent[k].wrong=sent[k].wrong.slice(0,3);
+      if(!d.gen||d.gen.failed){d.gen={sent,story:String((r&&r.story)||'').trim(),storyZh:String((r&&r.storyZh)||'').trim()};save()}
+    }catch(e){if(!d.gen){d.gen={sent:{},failed:true,err:(e&&e.code)||'x'};save()}}
+    GEN.p=null})();
+  return GEN.p}
+async function ensureGen(ctx){
+  const d=S.day;if(ctx.mode!=='day'||!d||d.gen||!aiReady())return;
+  const p=genJob(dayItems());if(!p)return;
+  $('#gbody').innerHTML=`<div class="card result stack"><div class="ptitle">${esc(S.pet.name)}正在编新句子…</div><p>今天的句子补全和完形填空，由 AI 用今天的单词现编，每天都不一样。马上就好。</p>
+    <div class="row center"><button class="btn small" id="genSkip">不等了，用词库里的例句</button></div></div>`;
+  let skip;const skipP=new Promise(ok=>{skip=ok});$('#genSkip').onclick=()=>skip('skip');
+  const r=await Promise.race([p.then(()=>'done'),skipP]);if(!alive(ctx))return;
+  if(r==='skip'){if(!d.gen){d.gen={sent:{},failed:true};save()}return}
+  if(d.gen&&d.gen.failed&&d.gen.err)toast(d.gen.err==='timeout'?'AI 编得太慢，先用词库里的例句':'AI 暂时没编出来，先用词库里的例句')
 }
 /* --- 生词本：句子里点不认识的词，查意思、加入生词本；加入后句子里会显示中文提示 --- */
 const MYW='mywords';
@@ -1411,7 +1567,7 @@ function runStep(ctx,step){
     case 'vsay':return zhSayStep(ctx,list);
     case 'venzh':case 'vzhen':case 'enzh':case 'zhen':return masteryLoop(ctx,list,(l,lab)=>choiceRound(ctx,l,lab,step.key));
     case 'spell':return spellStep(ctx,list);
-    case 'fill':return masteryLoop(ctx,list,(l,lab)=>fillRound(ctx,l,lab));
+    case 'fill':return fillStep(ctx,list);
     case 'read':return readPass(ctx,list);
     case 'build':return masteryLoop(ctx,list,(l,lab)=>buildRound(ctx,l,lab));
     case 'cloze':return list.length>=2?clozeRound(ctx,list,ctx.mode==='day'?genStory(list):null):Promise.resolve();
@@ -1422,6 +1578,7 @@ async function runDay(){
   buildDay();const items=dayItems();if(!items.length)return go('today');
   const ctx={tok:++RUN,mode:'day',items,pool:items};
   S.day.started=true;save();flowShell(ctx);window.scrollTo(0,0);
+  if(S.day.step<=STEPS.findIndex(x=>x.key==='cloze'))genJob(items); // 后台提前编句子
   const cv=curveSet();
   for(let i=S.day.step;i<STEPS.length;i++){
     const step=STEPS[i];ctx.step=step;drawMini(i);ctx.items=NEW_ONLY.has(step.key)?items.filter(it=>!cv.has(it.id)):items;
@@ -1680,8 +1837,8 @@ async function sendFree(){
   talk.log.push({who:'k',en:txt});talk.busy=true;talk.sug='';drawTalk();const tk=talk;
   try{
     const hist=talk.log.slice(-10).map(m=>(m.who==='p'?'宠物':'孩子')+'：'+m.en).join('\n');
-    const r=await aiJSON(`你是儿童背单词 app 里的小宠物「${S.pet.name}」，正在和一个中国小学生（6-10 岁）用英语聊天，帮他练习口语。
-规则：只用小学低年级的简单英语，1-2 个短句，每句不超过 8 个词；语气活泼友好，多夸奖；最好用一个简单的问题结尾，让对话继续下去；如果孩子写了中文或说不出来，就用简单英语回应，并在 try 里教他这句话用英语怎么说；如果孩子的英语有语法或拼写错误，在 fix 里写出改正后的整句（没有错误就留空字符串）；话题保持适合儿童。
+    const r=await aiJSON(`你是儿童背单词 app 里的小宠物「${S.pet.name}」，正在和一个${lvt().who}用英语聊天，帮他练习口语。
+规则：${studyLv()==='kid'?'只用小学低年级的简单英语，1-2 个短句，每句不超过 8 个词':lvt().words+'，1-3 句'}；语气活泼友好，多夸奖；最好用一个简单的问题结尾，让对话继续下去；如果孩子写了中文或说不出来，就用简单英语回应，并在 try 里教他这句话用英语怎么说；如果孩子的英语有语法或拼写错误，在 fix 里写出改正后的整句（没有错误就留空字符串）；话题保持适合儿童。
 只回复一个 JSON 对象：{"en":"你的英文回复","zh":"这句回复的中文翻译","fix":"改正后的孩子句子或空字符串","try":"建议孩子下一句可以说的简单英文"}
 对话记录：
 ${hist}`);
@@ -1971,8 +2128,8 @@ function bindAISettings(){
 /* 给没有例句的单词配一个固定例句（保存进词库，跟读、拼句子都用它） */
 async function fillExamples(items){
   const need=items.filter(i=>!hasEx(i)).slice(0,40);if(!need.length)return 0;
-  const arr=await aiJSON(`你在帮中国小学生（6-10 岁）背英语单词。请给下面每个单词写一个简单的英文例句和中文翻译。
-要求：句子 4-8 个词，只用小学低年级常见词汇，以一般现在时为主；句子里必须原样出现这个单词（名词可以用复数形式，不要换成别的词形）；短语或固定搭配要完整出现，只有第一个动词可以变形；中文翻译自然、口语化；每句句式尽量不同；句子结尾有句号、问号或感叹号。
+  const arr=await aiJSON(`你在帮${lvt().who}背英语单词。请给下面每个单词写一个简单的英文例句和中文翻译。
+要求：句子 ${lvt().len}，${lvt().words}；句子里必须原样出现这个单词（名词可以用复数形式，不要换成别的词形）；短语或固定搭配要完整出现，只有第一个动词可以变形；中文翻译自然、口语化；每句句式尽量不同；句子结尾有句号、问号或感叹号。
 只回复一个 JSON 数组，每项 {"en":"单词","ex":"英文例句","zh":"中文翻译"}。例如：[{"en":"apple","ex":"I eat an apple every day.","zh":"我每天吃一个苹果。"}]
 单词列表：
 ${need.map(i=>i.en+' — '+i.zh).join('\n')}`,40000);
@@ -2072,6 +2229,7 @@ function renderDecks(){
 
    <div class="card stack" style="gap:10px"><h2 style="font-size:21px">学习设置</h2>
     <div class="setrow"><label class="lb" for="npd" style="margin:0">每天新单词</label><select id="npd">${[3,5,8,10].map(n=>`<option ${n===S.newPerDay?'selected':''}>${n}</option>`).join('')}</select></div>
+    <div class="setrow"><label class="lb" for="tlv" style="margin:0">句子和对话难度</label><select id="tlv">${[['auto','自动（按使用中的词库）'],['kid','小学'],['mid','初中'],['high','高中']].map(([v,t])=>`<option value="${v}" ${(S.talkLv||'auto')===v?'selected':''}>${t}</option>`).join('')}</select></div>
     <div class="setrow"><label class="lb" for="mrv" style="margin:0">每天最多复习</label><select id="mrv">${[5,10,15,20,30].map(n=>`<option ${n===S.maxReview?'selected':''}>${n}</option>`).join('')}</select></div>
     <div class="setrow"><label class="lb" for="spr" style="margin:0">底部显示「自由练习」</label><input type="checkbox" id="spr" ${S.showPractice?'checked':''} style="width:24px;height:24px;accent-color:var(--leaf)"></div>
     <p class="hint" style="margin:0">复习按遗忘曲线安排：学完第 1、2、4、7、15 天后各复习一次。复习时全部做对就进入下一档，出错就从头再来；连续 5 次复习都对就进「已掌握」。</p></div>
@@ -2124,6 +2282,7 @@ function renderDecks(){
   bindImgImport('#impImg','#impImgFile','这是一张小学英语单词表或课本的照片。请识别出里面所有的英语单词或短语和中文意思；如果图片里有对应的英文例句和翻译，也一起提取。没有中文意思的单词，请补上简单的中文意思。只回复 JSON 数组，每项 {"en":"apple","zh":"苹果","ex":"英文例句，没有就留空","exZh":"例句翻译，没有就留空"}。',
     arr=>{const lines=arr.filter(x=>x&&x.en&&x.zh).map(x=>[x.en,x.zh,x.ex,x.exZh].map(v=>String(v||'').trim()).filter((v,k)=>k<2||v).join(' | '));const ta=$('#impText');ta.value=(ta.value.trim()?ta.value.trim()+'\n':'')+lines.join('\n');ta.dispatchEvent(new Event('input'));if(lines.length){const nm=impLab();setTimeout(()=>{toast(`识别出 ${lines.length} 条，检查一下，点「导入」放进${nm}`);const ib=$('#impBtn');ib.scrollIntoView({behavior:'smooth',block:'center'});ib.classList.add('pulse');setTimeout(()=>ib.classList.remove('pulse'),2400)},50)}return lines.length});
   $('#mrv').onchange=e=>{S.maxReview=+e.target.value;save()};
+  $('#tlv').onchange=e=>{S.talkLv=e.target.value;if(S.day&&!S.day.started&&!S.day.done){Object.assign(S.day,patPlan());save()}save();toast('难度已改为：'+e.target.selectedOptions[0].textContent)};
   $('#spr').onchange=e=>{S.showPractice=e.target.checked;save();hud();toast(S.showPractice?'「自由练习」已显示在底部':'「自由练习」已隐藏')};
   const ai=$('#aiD');if(ai)ai.onclick=()=>aiFill(ai,dNoEx);
   bindBackup();
