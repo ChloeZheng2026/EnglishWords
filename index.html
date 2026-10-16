@@ -840,7 +840,7 @@ function readPass(ctx,list){return new Promise(res=>{
     ui.body.innerHTML=`<div class="card prompt"><div class="sent" id="rEn">${hl(it)}</div><div class="hint" style="font-size:19px;color:var(--ink)">${esc(it.exZh)}</div><div class="rword"><b>${esc(it.en)}</b> ${esc(it.zh)}</div>
       <div class="rdots" id="rd">${'<span></span>'.repeat(N)}</div>${N===1?'<div class="hint" style="margin:-6px 0 8px">学过的词，读 1 遍就行</div>':''}
       <div class="row center"><button class="btn" id="spk">🔊 英文</button><button class="btn" id="spkz">🔊 中文</button></div></div>
-      <div class="speakbox" style="margin-top:12px">${scoring?'<button class="mic hold" id="rMic" type="button">🎤 点一下开始读</button>':'<div class="row center"><button class="btn go" id="did" style="font-size:19px;padding:14px 26px">✓ 我读完了</button></div>'}
+      <div class="speakbox" style="margin-top:12px">${scoring?'<button class="mic hold" id="rMic" type="button">🎤 点一下开始读</button><div class="row center" style="margin-top:8px"><button class="btn small" id="did2" type="button">已经大声读完了，下一遍</button></div>':'<div class="row center"><button class="btn go" id="did" style="font-size:19px;padding:14px 26px">✓ 我读完了</button></div>'}
       <p class="hint center" id="rTip" style="margin:8px 0 0">先听，再大声读：<b>先读英文，再读中文</b>。${scoring?'读完停一下，会自动结束。':'读完点上面的按钮。'}</p>
       <div id="rFb" class="sayfb" hidden></div></div>`;
     ui.body.querySelectorAll('#rEn .tw').forEach(el=>el.onclick=()=>tapWord(el,el.dataset.tw,it.ex));
@@ -848,21 +848,18 @@ function readPass(ctx,list){return new Promise(res=>{
     const dot=()=>{if(done||n>=N)return true;n++;$('#rd').children[n-1].classList.add('on');beep('ok');
       if(n>=N){done=true;const dd=$('#did');if(dd)dd.disabled=true;const m=$('#rMic');if(m)m.disabled=true;good(ctx,$('#rd'));i++;setTimeout(q,1300);return true}return false};
     if(!scoring){$('#did').onclick=()=>{if(!dot()){say(it.ex)}};return}
-    const mic=$('#rMic'),fb=$('#rFb');
+    const mic=$('#rMic'),fb=$('#rFb');$('#did2').onclick=()=>{if(rec){const r=rec;rec=null;try{r.abort()}catch(_){}mic.classList.remove('on')}fb.hidden=true;if(!dot())next()};
     const best=()=>(alts.length?alts:[txt]).map(c=>enWordsHit(c,it.ex)).sort((a,b)=>b.score-a.score)[0];
     const paint=(r,end)=>{const toks=it.ex.split(/\s+/);let k=0;
-      $('#rEn').innerHTML=toks.map(t=>{const has=/[A-Za-z0-9]/.test(t);const ok=has?r.hit[k++]:true;return `<span class="${has&&ok&&txt?'rhit':has&&end&&!ok?'rmiss':''}">${esc(t)}</span>`}).join(' ')};
+      $('#rEn').innerHTML=toks.map(t=>{const has=/[A-Za-z0-9]/.test(t);const ok=has?r.hit[k++]:true;return `<span class="${has&&ok&&txt?'rhit':''}">${esc(t)}</span>`}).join(' ')};
     const stopRec=()=>{const r=rec;if(!r)return;clearTimeout(stopT);mic.textContent='好的，正在判断…';try{r.stop()}catch(_){}setTimeout(()=>r._finish&&r._finish(),2500)};
     const next=()=>{mic.textContent=`🎤 点一下读第 ${n+1} 遍`;setTimeout(()=>{if(!done&&!rec)$('#rEn').innerHTML=hl(it)},1500)};
     const judge=()=>{mic.classList.remove('on');clearTimeout(stopT);const r=best();fb.hidden=false;
-      if(txt.trim())paint(r,true);else $('#rEn').innerHTML=hl(it);
-      if(!txt.trim()){fb.className='sayfb no';fb.innerHTML='没听到声音，<b>靠近一点、大声一点</b>再读一次';mic.textContent='🎤 再读一次';return}
-      const miss=r.want.filter((w,k)=>!r.hit[k]);
-      if(r.score>=.6){fails=0;badRun=0;fb.className='sayfb ok';fb.innerHTML=`✓ 读得好！${miss.length?`<br><small>这几个词没听清，下次读响一点：${esc(miss.slice(0,4).join(' '))}</small>`:''}`;if(!dot())next();return}
-      fails++;
-      if(fails>=2){fails=0;badRun++;fb.className='sayfb';fb.innerHTML='没关系，这一遍算你读过了 👍<br><small>多听几遍原音，跟着读就好</small>';
-        if(badRun>=3&&!S.readTip){S.readTip=1;save();toast('如果总是识别不准，可以在词库页设置里关掉「跟读打分」')}if(!dot())next();return}
-      beep('bad');fb.className='sayfb no';fb.innerHTML=`有几个词没听清：<b>${esc(miss.slice(0,5).join(' '))}</b><br>先点「🔊 英文」听一遍，再读一次`;mic.textContent='🎤 再读一次'};
+      $('#rEn').innerHTML=hl(it);
+      /* 苹果的识别对孩子不准，所以只要听到在读就算过，不再提示「漏读」 */
+      const heard=txt.trim().split(/\s+/).filter(Boolean).length;
+      if(!heard){fb.className='sayfb no';fb.innerHTML='没听到声音，<b>靠近一点、大声一点</b>再读一次';mic.textContent='🎤 再读一次';return}
+      fb.className='sayfb ok';fb.innerHTML=['✓ 读得好！','✓ 很棒，声音很响亮！','✓ 读完啦！'][Math.random()*3|0];if(!dot())next()};
     const start=()=>{hush();txt='';alts=[];fb.hidden=true;$('#rEn').innerHTML=hl(it);
       mic.classList.add('on');mic.textContent='● 正在听… 读完停一下就好';let allAt=0;
       rec=listen(t=>{txt=t;alts=ALTS.slice();const r=best();paint(r,false);
@@ -1855,10 +1852,7 @@ async function runPractice(k){
   const ctx={tok:++RUN,mode:'free',items,pool:deck().items,ok:0,step};
   flowShell(ctx);window.scrollTo(0,0);
   await runStep(ctx,step);if(!alive(ctx))return;
-  beep('win');$('#progBar').style.width='100%';
-  $('#gbody').innerHTML=`<div class="card result stack"><div class="ptitle">${step.name} 过关！</div><div class="big">🍎 ${ctx.ok}</div><div>这一轮赚到 ${ctx.ok} 个苹果</div>
-    <div class="row center"><button class="btn sun" id="again">再玩一次</button><button class="btn go" data-go="pet">去喂${esc(S.pet.name)}</button></div></div>`;
-  $('#again').onclick=()=>runPractice(k);
+  beep('win');toast(`${step.name} 完成${ctx.ok?`，赚到 ${ctx.ok} 个苹果 🍎`:''}`);go('practice');
 }
 function switchDeck(id,after){S.active=id;if(S.day&&!S.day.done&&(!S.day.started||!dayItems().length))buildDay(true);save();hud();after()}
 
@@ -2432,7 +2426,7 @@ function renderDecks(){
     <div class="setrow"><label class="lb" for="npd" style="margin:0">每天新单词</label><select id="npd">${[3,5,8,10].map(n=>`<option ${n===S.newPerDay?'selected':''}>${n}</option>`).join('')}</select></div>
     <div class="setrow"><label class="lb" for="tlv" style="margin:0">句子和对话难度</label><select id="tlv">${[['auto','自动（按使用中的词库）'],['kid','小学'],['mid','初中'],['high','高中']].map(([v,t])=>`<option value="${v}" ${(S.talkLv||'auto')===v?'selected':''}>${t}</option>`).join('')}</select></div>
     <div class="setrow"><label class="lb" for="vsrc" style="margin:0">英文发音</label><select id="vsrc"><option value="yd" ${voiceCfg().src==='yd'?'selected':''}>有道真人发音（推荐，要联网）</option><option value="sys" ${voiceCfg().src==='sys'?'selected':''}>iPad 系统发音</option></select></div>
-    <div class="setrow"><label class="lb" for="rsc" style="margin:0">跟读打分（语音识别）</label><input type="checkbox" id="rsc" ${S.readScore!==false?'checked':''}><span class="sub" style="margin:0">关掉后，跟读只要听完读完点「我读完了」</span></div>
+    <div class="setrow"><label class="lb" for="rsc" style="margin:0">跟读用麦克风</label><input type="checkbox" id="rsc" ${S.readScore!==false?'checked':''}><span class="sub" style="margin:0">打开：点麦克风读，听到在读就算过；关掉：读完点「我读完了」</span></div>
     <div class="setrow"><label class="lb" for="vslow" style="margin:0">发音放慢一点</label><input type="checkbox" id="vslow" ${voiceCfg().slow?'checked':''}> <button class="btn small" id="vtest" type="button">🔊 试听</button></div>
     <div class="setrow"><label class="lb" for="mrv" style="margin:0">每天最多复习</label><select id="mrv">${[5,10,15,20,30].map(n=>`<option ${n===S.maxReview?'selected':''}>${n}</option>`).join('')}</select></div>
     <div class="setrow"><label class="lb" for="spr" style="margin:0">底部显示「自由练习」</label><input type="checkbox" id="spr" ${S.showPractice?'checked':''} style="width:24px;height:24px;accent-color:var(--leaf)"></div>
