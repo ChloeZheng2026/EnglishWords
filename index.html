@@ -286,6 +286,7 @@ rt{ruby-align:center}
 @media (max-width:440px){.ghead h2{font-size:18px}.ghead .chip{font-size:12.5px;padding:3px 8px}.ghead .btn.small{padding:6px 9px}}
 .mic.hold{border-radius:999px;padding:22px 16px;font-size:21px;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:none}
 .mic.hold.on{transform:scale(.97)}
+.rword{display:inline-block;margin-top:8px;padding:4px 12px;border-radius:999px;background:var(--sun-soft,#fff3c4);font-size:17px} .rword b{font-family:var(--f-display);margin-right:4px}
 .rhit{color:var(--leaf,#2e9e5b)} .rmiss{color:#d64532;text-decoration:underline wavy} .rnow{background:var(--sun-soft,#fff3c4);border-radius:8px;padding:2px 6px}
 #zForm .btn,#sayForm .btn{white-space:nowrap;flex:none}
 .sptip{margin-top:10px;font-size:16px;color:var(--ink-soft,#555)} .sptip b{font-family:var(--f-display);font-size:20px;color:var(--coral,#e5533d)}
@@ -359,6 +360,7 @@ const SAMPLE=[
   ['eraser','橡皮',"I use an eraser to fix mistakes.",'我用橡皮改错。'],['friend','朋友',"Tom is my best friend.",'汤姆是我最好的朋友。']]}];
 const INTERVALS=[1,2,4,7,15]; // 复习间隔（天），连续答对 5 次复习就算掌握
 const STEPS=[
+ {key:'read',ico:'📢',name:'跟读三遍',desc:'先认识今天的单词：每个句子先听，再大声读，先读英文再读中文，一共 3 遍。',ex:true},
  {key:'match',ico:'🧩',name:'单词配对',desc:'把英文和中文配成一对。点错的词会单独再练，最后全部再刷一遍。'},
  {key:'venzh',ico:'👀',name:'看英文选中文',desc:'看英文单词，选出正确的中文意思。'},
  {key:'vzhen',ico:'🔍',name:'看中文选英文',desc:'看中文，选出正确的英文单词。'},
@@ -368,13 +370,12 @@ const STEPS=[
  {key:'spell',ico:'✏️',name:'听音拼写',desc:'听读音，用字母把单词拼出来，拼对后再说出中文意思。拼错会先看正确拼法，再重新默写；拼错的词要连续拼对 5 次才过关。'},
  {key:'srev',ico:'🔁',name:'错句巩固',desc:'之前拼错、填错的句子，今天再拼一遍、翻译一遍。两样都一次做对，这句就过关；没过关明天继续。'},
  {key:'fill',ico:'🧱',name:'句子补全',desc:'看句子，选一个单词填进空格。接好 AI 后，句子每天都是新编的。',ex:true},
- {key:'read',ico:'📢',name:'跟读三遍',desc:'每个句子先听，再大声跟读，一共读 3 遍。',ex:true},
  {key:'build',ico:'🔤',name:'看中文拼句子',desc:'看中文，把打乱的英文单词排成句子。',ex:true},
  {key:'cloze',ico:'📖',name:'完形填空',desc:'把今天的单词填进小短文，全部填对才过关。接好 AI 后，每天是一篇新编的小故事。',ex:true},
  {key:'talk',ico:'💬',name:'每日对话',desc:'用嘴说：先考之前学过的问句，再学 3 个新问句，每句都要会回答、会提问。'}];
 const NEW_ONLY=new Set(['match','venzh','vzhen','enzh','zhen']); // 按遗忘曲线复习的词跳过配对和选择，只做说中文、拼写和句子
 function curveSet(){const d=S.day;return new Set(d.curveIds||d.revIds.filter(id=>S.srs[id]&&!S.srs[id].weak))}
-const GROUPS=[['认单词','🧩',[0,1,2]],['听一听','👂',[3,4]],['说中文','💭',[5]],['拼一拼','✏️',[6]],['用句子','📖',[7,8,9,10,11]],['说一说','💬',[12]]];
+const GROUPS=[['读一读','📢',[0]],['认单词','🧩',[1,2,3]],['听一听','👂',[4,5]],['说中文','💭',[6]],['拼一拼','✏️',[7]],['用句子','📖',[8,9,10,11]],['说一说','💬',[12]]];
 
 const fmt=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 const today=()=>fmt(new Date());
@@ -386,7 +387,7 @@ function mkDeck(id,name,rows){return {id,name,items:rows.map(r=>mkItem(id,...r))
 
 const KEY='doudou-words-v2';
 function fresh(){return {decks:SAMPLE.map(d=>mkDeck(d.id,d.name,d.items)),active:'animals',food:3,stars:0,snd:true,
-  pet:{name:'豆豆',xp:0,hunger:60,t:Date.now(),sp:'leaf'},owned:['plant'],equip:{},roomOff:[],dex:[],badges:{},stepsV:5,pats:{},srs:{},wc:{},day:null,streak:{last:'',n:0},newPerDay:5,maxReview:5,history:[]}}
+  pet:{name:'豆豆',xp:0,hunger:60,t:Date.now(),sp:'leaf'},owned:['plant'],equip:{},roomOff:[],dex:[],badges:{},stepsV:6,pats:{},srs:{},wc:{},day:null,streak:{last:'',n:0},newPerDay:5,maxReview:5,history:[]}}
 let S;
 try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
 if(!S||!S.decks){S=fresh();migrateV1()}
@@ -397,6 +398,7 @@ if(!S.stepsV){if(S.day&&S.day.step>=1)S.day.step+=2;S.stepsV=2;save()} // 新增
 if(S.stepsV===2){if(S.day&&S.day.step>=2)S.day.step+=1;S.stepsV=3;save()} // 新增「看英文说中文」
 if(S.stepsV===3){if(S.day&&S.day.step>=3&&S.day.step<=5)S.day.step-=1;S.stepsV=4;save()} // 「看英文说中文」挪到「听中文选英文」后面
 if(S.stepsV===4){if(S.day&&S.day.step>=7)S.day.step+=1;S.stepsV=5;save()} // 新增「错句巩固」
+if(S.stepsV===5){if(S.day&&S.day.step>=1&&S.day.step<=8)S.day.step+=1;S.stepsV=6;save()} // 「跟读」挪到最前面
 function migrateV1(){try{const o=JSON.parse(localStorage.getItem('doudou-words-v1'));if(!o)return;
   if(o.pet)S.pet=o.pet;S.food=o.food||S.food;S.stars=o.stars||0;
   (o.decks||[]).filter(d=>/^d\d/.test(d.id)).forEach(d=>{const words=(d.items||[]).filter(i=>!i.s).map(i=>mkItem(d.id,i.en,i.zh));
@@ -786,7 +788,7 @@ function readPass(ctx,list){return new Promise(res=>{
   function q(){
     if(!alive(ctx))return;if(i>=list.length)return res(new Set());ui.prog(i/list.length);
     const it=list[i];let n=0,fails=0,rec=null,phase='',enTxt='',zhTxt='',done=false;
-    ui.body.innerHTML=`<div class="card prompt"><div class="sent" id="rEn">${hl(it)}</div><div class="hint" id="rZh" style="font-size:19px;color:var(--ink)">${esc(it.exZh)}</div>
+    ui.body.innerHTML=`<div class="card prompt"><div class="sent" id="rEn">${hl(it)}</div><div class="hint" id="rZh" style="font-size:19px;color:var(--ink)">${esc(it.exZh)}</div><div class="rword"><b>${esc(it.en)}</b> ${esc(it.zh)}</div>
       <div class="rdots" id="rd"><span></span><span></span><span></span></div>
       <div class="row center"><button class="btn" id="spk">🔊 英文</button><button class="btn" id="spkz">🔊 中文</button></div></div>
       <div class="speakbox" style="margin-top:12px">${srOK?'<button class="mic hold" id="rMic" type="button">🎤 点一下开始读</button>':'<div class="row center"><button class="btn go" id="did">我读完第 1 遍</button></div>'}
@@ -1132,10 +1134,11 @@ function addDialogs(list){S.myPats=S.myPats||[];let n=0;const have=new Set(S.myP
 /* ---------- 口语：语音输入 + AI 判断 ---------- */
 const SRC=window.SpeechRecognition||window.webkitSpeechRecognition;
 const UA=navigator.userAgent,IOS=/iPhone|iPad|iPod/.test(UA)||(/Macintosh/.test(UA)&&navigator.maxTouchPoints>1);
-const IOS_SAFARI=IOS&&/Safari\//.test(UA)&&!/CriOS|FxiOS|EdgiOS|MQQBrowser|QQ\/|MicroMessenger|UCBrowser|Quark|baidu/i.test(UA);
+const IOS_SAFARI=IOS&&!/CriOS|FxiOS|EdgiOS|MQQBrowser|QQ\/|MicroMessenger|UCBrowser|Quark|baidu|DingTalk|Weibo/i.test(UA); // 包括 Safari 和添加到主屏幕的 App
 let srOK=!!SRC&&location.protocol!=='file:'&&(!IOS||IOS_SAFARI);
-try{if(localStorage.getItem('doudou-sr-off'))srOK=false}catch(e){}
-function srFail(){if(!srOK)return;srOK=false;try{localStorage.setItem('doudou-sr-off','1')}catch(e){}toast('这里的语音按钮用不了，请点输入框，用键盘上的 🎤 说话')}
+try{localStorage.removeItem('doudou-sr-off')}catch(e){} // 以前会永久关掉语音按钮，现在不再这样
+function srFail(){if(!srOK)return;srOK=false;toast('麦克风没打开：请在弹出的提示里点「允许」，或者先用键盘上的 🎤 说话。下次打开会再试语音按钮')}
+function srSlow(){toast('麦克风没反应，再点一下试试')}
 /* 识别结果的几个候选（最多 5 个），判断时每个都试一下，取最好的，减少「明明说对了却判错」 */
 let ALTS=[];
 function altsOf(results){const base=[...results].map(x=>x[0].transcript),out=[base.join('')];
@@ -1152,7 +1155,7 @@ function listen(onText,onEnd,hold,lang){
     r.onresult=e=>{got=true;ready();ALTS=altsOf(e.results);onText(ALTS[0])};
     r.onerror=e=>{if(['not-allowed','service-not-allowed','audio-capture'].includes(e.error))srFail();finish()};
     r.onend=finish;r.start();
-    wd=setTimeout(()=>{if(!alive){try{r.abort()}catch(e){}srFail();finish()}},5000);
+    wd=setTimeout(()=>{if(!alive){try{r.abort()}catch(e){}srSlow();finish()}},9000);
     r._finish=finish;return r}catch(e){srFail();return null}}
 const CONTR=[[/\bwhat's\b/g,'what is'],[/\bit's\b/g,'it is'],[/\bi'm\b/g,'i am'],[/\bdon't\b/g,'do not'],[/\bcan't\b/g,'cannot'],[/\bcan not\b/g,'cannot'],[/\bisn't\b/g,'is not'],[/\bhow's\b/g,'how is'],[/\bthat's\b/g,'that is'],[/\byou're\b/g,'you are'],[/\bwhere's\b/g,'where is'],[/\bwho's\b/g,'who is'],[/\blet's\b/g,'let us'],[/\bhe's\b/g,'he is'],[/\bshe's\b/g,'she is'],[/\bi've\b/g,'i have'],[/\bok\b/g,'okay']];
 const HOMO={to:'two',too:'two','2':'two',for:'four','4':'four',write:'right',their:'there',"they're":'there',eye:'i',eight:'ate','8':'ate',son:'sun',sea:'see',knew:'new',know:'no',our:'hour',blew:'blue',buy:'by',bye:'by',won:'one','1':'one',flour:'flower',meat:'meet',weak:'week',where:'wear',tale:'tail',bare:'bear',deer:'dear',pear:'pair',here:'hear',hole:'whole',plane:'plain',road:'rode',sail:'sale',wood:'would',piece:'peace','3':'three','5':'five','6':'six','7':'seven','9':'nine','10':'ten',mom:'mum',mommy:'mum',mother:'mother',colour:'color',favourite:'favorite',grey:'gray',ok:'okay'};
@@ -1259,10 +1262,12 @@ ${qs.map((x,i)=>`${i}. ${x.q}　正确答案：${x.ans}　干扰选项：${x.opt
     sent[x.id].wrong=sent[x.id].wrong.filter(w=>!no.has(String(w).trim().toLowerCase()))}}
 /* 提前编句子：开始今天的任务时就在后台让 AI 编好，做到句子补全时一般已经好了，不用等 */
 let GEN={d:null,p:null};
+let EXJ={d:null,p:null};
+function exJob(items){const d=S.day;const noEx=items.filter(i=>!hasEx(i));if(!d||!noEx.length||d.exTried||!aiReady())return null;if(EXJ.d===d&&EXJ.p)return EXJ.p;
+  EXJ.d=d;EXJ.p=(async()=>{try{await fillExamples(noEx)}catch(e){}d.exTried=true;save();EXJ.p=null})();return EXJ.p}
 function genJob(items){const d=S.day;if(!d||d.gen||!aiReady())return null;if(GEN.d===d&&GEN.p)return GEN.p;GEN.d=d;
   GEN.p=(async()=>{
-    const noEx=items.filter(i=>!hasEx(i));
-    if(noEx.length&&!d.exTried){d.exTried=true;save();try{await fillExamples(noEx)}catch(e){}}
+    const ej=exJob(items);if(ej)await ej;
     try{
       const r=await aiJSON(`你在帮${lvt().who}复习英语单词。今天的单词：
 ${items.map(i=>`${i.en}（${i.zh}）`).join('\n')}
@@ -1658,6 +1663,8 @@ async function runDay(){
   const cv=curveSet();
   for(let i=S.day.step;i<STEPS.length;i++){
     const step=STEPS[i];ctx.step=step;drawMini(i);ctx.items=NEW_ONLY.has(step.key)?items.filter(it=>!cv.has(it.id)):items;
+    if(step.key==='read'){const ej=exJob(items);if(ej){$('#gbody').innerHTML=`<div class="card result stack"><div class="ptitle">${esc(S.pet.name)}正在给新单词配例句…</div><p>有些单词还没有例句，AI 正在写，一般几秒钟。</p><div class="row center"><button class="btn small" id="exSkip">不等了</button></div></div>`;
+      await Promise.race([ej,new Promise(ok=>{$('#exSkip').onclick=ok})]);if(!alive(ctx))return}}
     if(step.key==='fill'||step.key==='cloze'){await ensureGen(ctx);if(!alive(ctx))return}
     const n=step.key==='srev'?(ctx.mode==='day'?dueSents().length:0):step.key==='talk'?patCount():step.ex?ctx.items.map(it=>step.key==='fill'||step.key==='cloze'?genFor(it):it).filter(hasEx).length:ctx.items.length;
     if(!n||(step.key==='cloze'&&n<2)){S.day.step=i+1;save();continue}
