@@ -358,9 +358,11 @@ const SAMPLE=[
   ['student','学生',"I am a student at school.",'我是学校里的一名学生。'],['desk','课桌',"I sit at my desk in class.",'上课时我坐在我的课桌前。'],
   ['school bag','书包',"I carry my school bag to school.",'我背着书包去上学。'],['classroom','教室',"We have lessons in the classroom.",'我们在教室里上课。'],
   ['eraser','橡皮',"I use an eraser to fix mistakes.",'我用橡皮改错。'],['friend','朋友',"Tom is my best friend.",'汤姆是我最好的朋友。']]}];
-const INTERVALS=[1,2,4,7,15]; // 复习间隔（天），连续答对 5 次复习就算掌握
+const INTERVALS=[1,2,4,7,15,30]; // 单词复习间隔（天）：第 4 天之后 2、4、7、15、30 天各复习一次，都对就算掌握
+const PAT_INTERVALS=[1,2,4,7,15]; // 每日对话问句的复习间隔
 const STEPS=[
- {key:'read',ico:'📢',name:'跟读三遍',desc:'先认识今天的单词：每个句子先听，再大声读，先读英文再读中文，一共 3 遍。',ex:true},
+ {key:'intro',ico:'🌱',name:'认识新词',desc:'每个新词一张卡片：听两遍读音，看中文和记忆小窍门，再看着单词拼一遍。'},
+ {key:'read',ico:'📢',name:'跟读',desc:'每个句子先听，再大声读，先读英文再读中文。当天的新词读 3 遍，学过的词读 1 遍。',ex:true},
  {key:'match',ico:'🧩',name:'单词配对',desc:'把英文和中文配成一对。点错的词会单独再练，最后全部再刷一遍。'},
  {key:'venzh',ico:'👀',name:'看英文选中文',desc:'看英文单词，选出正确的中文意思。'},
  {key:'vzhen',ico:'🔍',name:'看中文选英文',desc:'看中文，选出正确的英文单词。'},
@@ -373,9 +375,21 @@ const STEPS=[
  {key:'build',ico:'🔤',name:'看中文拼句子',desc:'看中文，把打乱的英文单词排成句子。',ex:true},
  {key:'cloze',ico:'📖',name:'完形填空',desc:'把今天的单词填进小短文，全部填对才过关。接好 AI 后，每天是一篇新编的小故事。',ex:true},
  {key:'talk',ico:'💬',name:'每日对话',desc:'用嘴说：先考之前学过的问句，再学 3 个新问句，每句都要会回答、会提问。'}];
-const NEW_ONLY=new Set(['match','venzh','vzhen','enzh','zhen']); // 按遗忘曲线复习的词跳过配对和选择，只做说中文、拼写和句子
-function curveSet(){const d=S.day;return new Set(d.curveIds||d.revIds.filter(id=>S.srs[id]&&!S.srs[id].weak))}
-const GROUPS=[['读一读','📢',[0]],['认单词','🧩',[1,2,3]],['听一听','👂',[4,5]],['说中文','💭',[6]],['拼一拼','✏️',[7]],['用句子','📖',[8,9,10,11]],['说一说','💬',[12]]];
+/* 单词的三个阶段：
+   A 段（学的当天 + 后面两天，共 3 天）：跟读、配对、4 种选择题
+   B 段（第 4 天，错了就第二天再来，直到全对）：跟读、说中文、拼写、句子补全、拼句子、完形填空
+   之后按遗忘曲线复习（和 B 段做一样的关卡），全部复习都对就算掌握。每日对话每天都放最后 */
+const A_STEPS=new Set(['match','venzh','enzh','zhen']),B_STEPS=new Set(['vsay','spell','fill','build','cloze']);
+const A_DAYS=3;
+const phaseOf=r=>!r?'':r.ph>=1&&r.ph<A_DAYS?'A':r.ph===A_DAYS?'B':'C';
+function daySets(){const d=S.day;const N=new Set(d.newIds),A2=new Set(d.aIds||[]),A=new Set(d.newIds.concat(d.aIds||[]));
+  const B=new Set(d.aIds?d.revIds.filter(id=>!A.has(id)):d.revIds);return {N,A2,A,B}}
+/* 每一关练哪些词：第 1 天的新词多一个「看中文选英文」；第 2、3 天的词换成「看英文说中文」（自己想出来） */
+function stepIds(key,ds){if(key==='intro'||key==='vzhen')return ds.N;if(key==='vsay')return new Set([...ds.A2,...ds.B]);
+  if(A_STEPS.has(key))return ds.A;if(B_STEPS.has(key))return ds.B;return null}
+const STEP_WHO={intro:'（今天的新词）',vzhen:'（今天的新词）',vsay:'（前几天学过的词）',match:'（前 3 天的词）',venzh:'（前 3 天的词）',enzh:'（前 3 天的词）',zhen:'（前 3 天的词）',spell:'（第 4 天的词和复习词）',fill:'（第 4 天的词和复习词）',build:'（第 4 天的词和复习词）',cloze:'（第 4 天的词和复习词）'};
+const NEW_ONLY=A_STEPS;
+const GROUPS=[['认新词','🌱',[0,1]],['认单词','🧩',[2,3,4]],['听一听','👂',[5,6]],['说中文','💭',[7]],['拼一拼','✏️',[8]],['用句子','📖',[9,10,11,12]],['说一说','💬',[13]]];
 
 const fmt=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 const today=()=>fmt(new Date());
@@ -387,7 +401,7 @@ function mkDeck(id,name,rows){return {id,name,items:rows.map(r=>mkItem(id,...r))
 
 const KEY='doudou-words-v2';
 function fresh(){return {decks:SAMPLE.map(d=>mkDeck(d.id,d.name,d.items)),active:'animals',food:3,stars:0,snd:true,
-  pet:{name:'豆豆',xp:0,hunger:60,t:Date.now(),sp:'leaf'},owned:['plant'],equip:{},roomOff:[],dex:[],badges:{},stepsV:6,pats:{},srs:{},wc:{},day:null,streak:{last:'',n:0},newPerDay:5,maxReview:5,history:[]}}
+  pet:{name:'豆豆',xp:0,hunger:60,t:Date.now(),sp:'leaf'},owned:['plant'],equip:{},roomOff:[],dex:[],badges:{},stepsV:7,pats:{},srs:{},wc:{},day:null,streak:{last:'',n:0},newPerDay:5,maxReview:5,history:[]}}
 let S;
 try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
 if(!S||!S.decks){S=fresh();migrateV1()}
@@ -398,7 +412,11 @@ if(!S.stepsV){if(S.day&&S.day.step>=1)S.day.step+=2;S.stepsV=2;save()} // 新增
 if(S.stepsV===2){if(S.day&&S.day.step>=2)S.day.step+=1;S.stepsV=3;save()} // 新增「看英文说中文」
 if(S.stepsV===3){if(S.day&&S.day.step>=3&&S.day.step<=5)S.day.step-=1;S.stepsV=4;save()} // 「看英文说中文」挪到「听中文选英文」后面
 if(S.stepsV===4){if(S.day&&S.day.step>=7)S.day.step+=1;S.stepsV=5;save()} // 新增「错句巩固」
+if(!S.phV){const t=today();for(const r of Object.values(S.srs||{})){if(r.mastered||r.ph)continue;const days=r.learned?Math.round((new Date(t)-new Date(r.learned))/864e5):99;
+  if(days<=A_DAYS&&(r.st||0)===0){r.ph=Math.min(A_DAYS,1+(r.reviews||0));r.due=r.due<t?t:r.due}else r.ph=9}
+  S.phV=1;if(S.day&&!S.day.started&&!S.day.done)S.day=null;save()} // 改成三天消化
 if(S.stepsV===5){if(S.day&&S.day.step>=1&&S.day.step<=8)S.day.step+=1;S.stepsV=6;save()} // 「跟读」挪到最前面
+if(S.stepsV===6){if(S.day&&S.day.step>=1)S.day.step+=1;S.stepsV=7;save()} // 新增「认识新词」
 function migrateV1(){try{const o=JSON.parse(localStorage.getItem('doudou-words-v1'));if(!o)return;
   if(o.pet)S.pet=o.pet;S.food=o.food||S.food;S.stars=o.stars||0;
   (o.decks||[]).filter(d=>/^d\d/.test(d.id)).forEach(d=>{const words=(d.items||[]).filter(i=>!i.s).map(i=>mkItem(d.id,i.en,i.zh));
@@ -481,12 +499,13 @@ function buildDay(force){
   /* 之前开始了但没做完：不清空，带到今天接着做 */
   if(!force&&S.day&&!S.day.done&&S.day.started&&S.day.date<t&&dayItems().length){S.day.from=S.day.from||S.day.date;S.day.date=t;save();return}
   const map=wordMap();
-  const due=Object.entries(S.srs).filter(([id,r])=>!r.mastered&&!r.moved&&r.due<=t&&map.has(id))
-    .sort((a,b)=>a[1].due<b[1].due?-1:a[1].due>b[1].due?1:0);
+  const live=Object.entries(S.srs).filter(([id,r])=>!r.mastered&&!r.moved&&r.due<=t&&map.has(id));
+  const aIds=live.filter(e=>phaseOf(e[1])==='A').map(e=>e[0]),bIds=live.filter(e=>phaseOf(e[1])==='B').map(e=>e[0]);
+  const due=live.filter(e=>phaseOf(e[1])==='C').sort((a,b)=>a[1].due<b[1].due?-1:a[1].due>b[1].due?1:0);
   /* 出过错的词（巩固中）每天都复习，排在最前面，不受复习数量限制（最多 10 个）；其余按遗忘曲线补满 */
   const weak=due.filter(e=>e[1].weak).slice(0,10),rest=due.filter(e=>!e[1].weak).slice(0,Math.max(0,(S.maxReview||5)-weak.length));
   const rev=weak.concat(rest).map(e=>e[0]);
-  S.day={date:t,newIds:nextNew(newQuota()),revIds:rev,curveIds:rest.map(e=>e[0]),step:0,missed:{},started:false,done:false,...patPlan()};save();
+  S.day={date:t,newIds:nextNew(newQuota()),revIds:aIds.concat(bIds,rev),aIds,bIds,curveIds:rest.map(e=>e[0]),step:0,missed:{},started:false,done:false,...patPlan()};save();
 }
 /* 新词顺序：生词本最多 2 个 → 使用中的词库（包括新加进去的词）→ 生词本剩下的 → 其他词库。学过的同一个单词不重复学 */
 function nextNew(n){const d=deck(),my=myDeck();const unl=dk=>dk?dk.items.filter(it=>!S.srs[it.id]):[];
@@ -773,6 +792,34 @@ async function fillStep(ctx,list){
     const ok=await transOne(ctx,ui,it);if(!alive(ctx))return;if(!ok)markMiss(ctx,it.id)}
 }
 
+/* --- 认识新词：卡片（读音两遍、中文、记忆小窍门）+ 看着拼一遍 --- */
+let TIPJ={d:null,p:null};
+function tipJob(items){const need=items.filter(i=>!i.tip);if(!need.length||!aiReady())return null;const d=S.day;if(TIPJ.d===d&&TIPJ.p)return TIPJ.p;TIPJ.d=d;
+  TIPJ.p=(async()=>{try{const arr=await aiJSON(`请帮${lvt().who}记住下面这些英语单词，每个词给一个记忆小窍门（中文，15-35 个字）和一个最贴切的 emoji。
+窍门可以用：拆分（rainbow = rain 雨 + bow 弓）、词根词缀（un- 表示"不"）、和学过的词联系、画面联想；谐音要慎用，必须健康、不低俗。不要只是重复中文意思。
+${need.map(i=>i.en+'（'+i.zh+'）').join('\n')}
+只回复 JSON 数组：[{"en":"单词","tip":"记忆小窍门","emoji":"🌈"}]`,30000);
+    for(const a of Array.isArray(arr)?arr:[]){const k=String(a.en||'').trim().toLowerCase();for(const it of allItems())if(it.en.toLowerCase()===k&&!it.tip){it.tip=String(a.tip||'').trim();it.emoji=String(a.emoji||'').trim().slice(0,4)}}save()}catch(e){}TIPJ.p=null})();return TIPJ.p}
+function introCard(ctx,ui,it){return new Promise(res=>{
+  if(!alive(ctx))return;
+  ui.body.innerHTML=`<div class="card prompt stack" style="gap:10px">${it.emoji?`<div style="font-size:54px;line-height:1">${esc(it.emoji)}</div>`:''}
+    <div class="en" style="font-size:44px">${esc(it.en)}</div><div class="zh" style="font-size:24px">${esc(it.zh)}</div>
+    <div class="row center"><button class="btn" id="iSay">🔊 再听一遍</button></div>
+    ${it.tip?`<div class="help" style="text-align:left">💡 ${esc(it.tip)}</div>`:''}
+    ${it.ex?`<div class="hint">${hl(it)}<br>${esc(it.exZh)}</div>`:''}
+    <div class="row center"><button class="btn go" id="iGo">记住了，看着拼一遍</button></div></div>`;
+  ui.body.querySelectorAll('.tw').forEach(el=>el.onclick=()=>tapWord(el,el.dataset.tw,it.ex));
+  say(it.en);setTimeout(()=>{if(alive(ctx)&&$('#iGo'))say(it.en)},1800);$('#iSay').onclick=()=>say(it.en);$('#iGo').onclick=()=>res();
+})}
+async function introStep(ctx,list){
+  if(ctx.mode==='day'){const p=tipJob(list);if(p){$('#gbody').innerHTML=`<div class="card result stack"><div class="ptitle">${esc(S.pet.name)}正在想记忆小窍门…</div><p>给每个新词编一个好记的小窍门，几秒钟就好。</p><div class="row center"><button class="btn small" id="tpSkip">不等了</button></div></div>`;
+    await Promise.race([p,new Promise(ok=>{$('#tpSkip').onclick=ok})]);if(!alive(ctx))return}}
+  for(let k=0;k<list.length;k++){const it=list[k];let ui=roundUI(ctx,`新词 ${k+1}/${list.length}`);ui.prog(k/list.length);
+    await introCard(ctx,ui,it);if(!alive(ctx))return;
+    ui=roundUI(ctx,`新词 ${k+1}/${list.length} · 看着拼`);ui.prog((k+.5)/list.length);
+    await spellOne(ctx,ui,it,`<div class="card prompt" style="margin-bottom:12px"><div class="en" style="font-size:34px">${esc(it.en)}</div><div class="hint">${esc(it.zh)}</div></div>`,{hint:'看着上面的单词拼一遍'});keyH=null;if(!alive(ctx))return}
+}
+
 /* --- 跟读三遍 --- */
 function hl(it){const sp=splitBlank(it);return wordSpans(sp.before)+'<mark>'+esc(sp.form)+'</mark>'+wordSpans(sp.after)}
 /* 跟读：每句读 3 遍，每遍先读英文再读中文。点一下开始，英文读完会自动转到中文，读完自动判断（也可以再点一下结束） */
@@ -784,19 +831,21 @@ const READ_EN=.75,READ_ZH=.6;
 const bestEn=(said,ref)=>cands(said).map(c=>enWordsHit(c,ref)).sort((a,b)=>b.score-a.score)[0];
 const bestZh=(said,ref)=>Math.max(...cands(said).map(c=>zhHit(c,ref)));
 function readPass(ctx,list){return new Promise(res=>{
-  const ui=roundUI(ctx,`${list.length} 个句子 · 每句 3 遍`);let i=0;
+  /* 当天的新词读 3 遍，其他（前几天的词、复习词）读 1 遍 */
+  const reps=it=>ctx.mode==='day'&&S.day&&!S.day.newIds.includes(it.id)?1:3;
+  const ui=roundUI(ctx,`${list.length} 个句子 · 新词读 3 遍${list.some(x=>reps(x)===1)?'，学过的词读 1 遍':''}`);let i=0;
   function q(){
     if(!alive(ctx))return;if(i>=list.length)return res(new Set());ui.prog(i/list.length);
-    const it=list[i];let n=0,fails=0,rec=null,phase='',enTxt='',zhTxt='',done=false;
+    const it=list[i],N=reps(it);let n=0,fails=0,rec=null,phase='',enTxt='',zhTxt='',done=false;
     ui.body.innerHTML=`<div class="card prompt"><div class="sent" id="rEn">${hl(it)}</div><div class="hint" id="rZh" style="font-size:19px;color:var(--ink)">${esc(it.exZh)}</div><div class="rword"><b>${esc(it.en)}</b> ${esc(it.zh)}</div>
-      <div class="rdots" id="rd"><span></span><span></span><span></span></div>
+      <div class="rdots" id="rd">${'<span></span>'.repeat(N)}</div>${N===1?'<div class="hint" style="margin:-6px 0 8px">学过的词，读 1 遍就行</div>':''}
       <div class="row center"><button class="btn" id="spk">🔊 英文</button><button class="btn" id="spkz">🔊 中文</button></div></div>
       <div class="speakbox" style="margin-top:12px">${srOK?'<button class="mic hold" id="rMic" type="button">🎤 点一下开始读</button>':'<div class="row center"><button class="btn go" id="did">我读完第 1 遍</button></div>'}
       <p class="hint center" id="rTip" style="margin:8px 0 0">先听一遍，再大声读：<b>先读英文，再读中文</b>。${srOK?'英文读完会自动换成中文。':''}</p>
       <div id="rFb" class="sayfb" hidden></div></div>`;
     ui.body.querySelectorAll('#rEn .tw').forEach(el=>el.onclick=()=>tapWord(el,el.dataset.tw,it.ex));
     setTimeout(()=>say(it.ex),200);$('#spk').onclick=()=>say(it.ex);$('#spkz').onclick=()=>say(it.exZh,'zh');
-    const dot=()=>{if(done||n>=3)return true;n++;$('#rd').children[n-1].classList.add('on');beep('ok');if(n>=3){done=true;const dd=$('#did');if(dd)dd.disabled=true;good(ctx,$('#rd'));i++;setTimeout(q,1200);return true}return false};
+    const dot=()=>{if(done||n>=N)return true;n++;$('#rd').children[n-1].classList.add('on');beep('ok');if(n>=N){done=true;const dd=$('#did');if(dd)dd.disabled=true;good(ctx,$('#rd'));i++;setTimeout(q,1200);return true}return false};
     if(!srOK){$('#did').onclick=()=>{if(!dot())$('#did').textContent=`我读完第 ${n+1} 遍`};return}
     const mic=$('#rMic'),fb=$('#rFb'),tip=$('#rTip');
     let enAlts=[],zhAlts=[];const showEn=()=>{const r=(enAlts.length?enAlts:[enTxt]).map(c=>enWordsHit(c,it.ex)).sort((a,b)=>b.score-a.score)[0];const toks=it.ex.split(/\s+/);let k=0;
@@ -813,14 +862,14 @@ function readPass(ctx,list){return new Promise(res=>{
     const startZh=()=>{phase='zh';tip.innerHTML='现在读中文：<b>'+esc(it.exZh)+'</b>（读完点一下）';$('#rZh').classList.add('rnow');
       rec=listen(t=>{zhTxt=t;zhAlts=ALTS.slice();if(zhHit(t,it.exZh)>=.9&&rec){const r=rec;setTimeout(()=>{try{r.stop()}catch(_){}},400)}},()=>{rec=null;$('#rZh').classList.remove('rnow');tip.innerHTML='先读英文，再读中文。英文读完会自动换成中文。';finish()},true,'zh-CN');
       if(!rec)finish()};
-    const startEn=()=>{try{hush()}catch(_){}enTxt='';zhTxt='';enAlts=[];zhAlts=[];fb.hidden=true;phase='en';$('#rEn').innerHTML=hl(it);
-      mic.classList.add('on');mic.textContent='● 正在听… 读完点这里';tip.innerHTML='先读英文：大声读上面的句子';beep('pop');
+    let dbMode=false;const startEn=()=>{try{hush()}catch(_){}enTxt='';zhTxt='';enAlts=[];zhAlts=[];dbMode=asrOn();fb.hidden=true;phase='en';$('#rEn').innerHTML=hl(it);
+      mic.classList.add('on');mic.textContent=dbMode?'● 正在录音… 英文中文都读完点这里':'● 正在听… 读完点这里';tip.innerHTML=dbMode?'先读英文，再读中文，<b>都读完再点一下</b>':'先读英文：大声读上面的句子';beep('pop');
       rec=listen(t=>{enTxt=t;enAlts=ALTS.slice();const r=showEn();if(r.score>=.95&&rec){const x=rec;setTimeout(()=>{try{x.stop()}catch(_){}},400)}},()=>{rec=null;
         if(!srOK){mic.hidden=true;tip.textContent='这里用不了语音，读完点下面的按钮';ui.body.querySelector('.speakbox').insertAdjacentHTML('beforeend','<div class="row center"><button class="btn go" id="did">我读完这一遍</button></div>');$('#did').onclick=()=>dot();return}
-        if(phase==='en')startZh()},true,'en-US');
+        if(phase==='en'){if(dbMode){zhTxt=enTxt;zhAlts=enAlts.slice();finish()}else startZh()}},true,'en-US');
       if(!rec){mic.classList.remove('on');phase=''}};
     mic.onclick=e=>{e.preventDefault();if(done)return;
-      if(rec){const r=rec;mic.textContent=phase==='en'?'● 正在听中文… 读完点这里':'好的，正在判断…';setTimeout(()=>{try{r.stop()}catch(_){}},250);setTimeout(()=>r._finish&&r._finish(),2500);return}
+      if(rec){const r=rec;mic.textContent=phase==='en'&&!dbMode?'● 正在听中文… 读完点这里':'好的，正在判断…';setTimeout(()=>{try{r.stop()}catch(_){}},250);setTimeout(()=>r._finish&&r._finish(),2500);return}
       if(phase===''||phase==='end')startEn()};
   }
   q();
@@ -1110,8 +1159,8 @@ async function patternStep(ctx){
 }
 function finishPats(t){const d=S.day;S.pats=S.pats||{};if(!d.patNew)return;
   for(const i of d.patRev){const r=S.pats[i];if(!r||!(d.patRes&&i in d.patRes))continue;
-    if(d.patRes[i]){r.st++;if(r.st>=INTERVALS.length){r.mastered=true;r.masteredOn=t}else r.due=addDays(t,INTERVALS[r.st])}else{r.st=0;r.due=addDays(t,INTERVALS[0])}}
-  for(const i of (d.patLearned||d.patNew))if(!S.pats[i]&&patById(i))S.pats[i]={st:0,due:addDays(t,INTERVALS[0]),learned:t};
+    if(d.patRes[i]){r.st++;if(r.st>=PAT_INTERVALS.length){r.mastered=true;r.masteredOn=t}else r.due=addDays(t,PAT_INTERVALS[r.st])}else{r.st=0;r.due=addDays(t,PAT_INTERVALS[0])}}
+  for(const i of (d.patLearned||d.patNew))if(!S.pats[i]&&patById(i))S.pats[i]={st:0,due:addDays(t,PAT_INTERVALS[0]),learned:t};
 }
 function patListHTML(){S.pats=S.pats||{};
   const ids=allPatIds().filter(i=>S.pats[i]||String(i)[0]==='c');
@@ -1137,14 +1186,62 @@ const UA=navigator.userAgent,IOS=/iPhone|iPad|iPod/.test(UA)||(/Macintosh/.test(
 const IOS_SAFARI=IOS&&!/CriOS|FxiOS|EdgiOS|MQQBrowser|QQ\/|MicroMessenger|UCBrowser|Quark|baidu|DingTalk|Weibo/i.test(UA); // 包括 Safari 和添加到主屏幕的 App
 let srOK=!!SRC&&location.protocol!=='file:'&&(!IOS||IOS_SAFARI);
 try{localStorage.removeItem('doudou-sr-off')}catch(e){} // 以前会永久关掉语音按钮，现在不再这样
+try{const a=JSON.parse(localStorage.getItem('doudou-asr')||'{}');if(a.on&&navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&location.protocol!=='file:')srOK=true}catch(e){}
 function srFail(){if(!srOK)return;srOK=false;toast('麦克风没打开：请在弹出的提示里点「允许」，或者先用键盘上的 🎤 说话。下次打开会再试语音按钮')}
 function srSlow(){toast('麦克风没反应，再点一下试试')}
 /* 识别结果的几个候选（最多 5 个），判断时每个都试一下，取最好的，减少「明明说对了却判错」 */
 let ALTS=[];
+/* ---------- 豆包语音识别（可选）：录一段音，交给豆包「录音文件识别 极速版」，比苹果自带的识别准，中英文混着说也能认 ---------- */
+const ASR_DEF={url:'https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash',key:'',access:'',res:'volc.bigasr.auc_turbo',on:false};
+function asrCfg(){let c={};try{c=JSON.parse(localStorage.getItem('doudou-asr'))||{}}catch(e){}return Object.assign({},ASR_DEF,c)}
+let ASR_BROKEN=false;
+const asrOn=()=>{const c=asrCfg();return c.on&&!!c.url&&!ASR_BROKEN&&!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia)&&location.protocol!=='file:'};
+function wavFrom(chunks,rate){let n=0;for(const c of chunks)n+=c.length;const all=new Float32Array(n);let o=0;for(const c of chunks){all.set(c,o);o+=c.length}
+  const R=16000,ratio=rate/R,len=Math.floor(all.length/ratio),pcm=new Int16Array(len);
+  for(let i=0;i<len;i++){const v=Math.max(-1,Math.min(1,all[Math.floor(i*ratio)]||0));pcm[i]=v<0?v*0x8000:v*0x7fff}
+  const buf=new ArrayBuffer(44+pcm.length*2),dv=new DataView(buf),ws=(p,t)=>{for(let i=0;i<t.length;i++)dv.setUint8(p+i,t.charCodeAt(i))};
+  ws(0,'RIFF');dv.setUint32(4,36+pcm.length*2,true);ws(8,'WAVE');ws(12,'fmt ');dv.setUint32(16,16,true);dv.setUint16(20,1,true);dv.setUint16(22,1,true);
+  dv.setUint32(24,R,true);dv.setUint32(28,R*2,true);dv.setUint16(32,2,true);dv.setUint16(34,16,true);ws(36,'data');dv.setUint32(40,pcm.length*2,true);
+  new Int16Array(buf,44).set(pcm);return buf}
+function b64(buf){const u=new Uint8Array(buf);let s='';for(let i=0;i<u.length;i+=0x8000)s+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));return btoa(s)}
+async function asrSend(wav){const c=asrCfg();const rid=(crypto.randomUUID&&crypto.randomUUID())||String(Date.now())+Math.random();
+  const h={'Content-Type':'application/json','X-Api-Resource-Id':c.res||ASR_DEF.res,'X-Api-Request-Id':rid,'X-Api-Sequence':'-1'};
+  if(c.access){h['X-Api-App-Key']=c.key;h['X-Api-Access-Key']=c.access}else if(c.key)h['X-Api-Key']=c.key;
+  const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),20000);let r;
+  try{r=await fetch(c.url,{method:'POST',signal:ctl.signal,headers:h,body:JSON.stringify({user:{uid:'kid'},audio:{data:b64(wav),format:'wav'},request:{model_name:'bigmodel',enable_punc:true}})})}
+  catch(e){throw {code:ctl.signal.aborted?'timeout':'network'}}finally{clearTimeout(tm)}
+  const st=r.headers.get('X-Api-Status-Code');const d=await r.json().catch(()=>null);
+  if(!r.ok)throw {code:r.status===401||r.status===403?'auth':'http',status:r.status,msg:r.headers.get('X-Api-Message')||''};
+  if(st&&st!=='20000000'&&st!=='20000003'&&st!=='45000002')throw {code:'asr',status:st,msg:r.headers.get('X-Api-Message')||''};
+  return String((d&&d.result&&d.result.text)||'').trim()}
+function asrErrMsg(e){const c=e&&e.code;return c==='network'?'豆包语音连不上（多半是浏览器跨域限制，需要转发服务）':c==='auth'?'豆包语音的 Key 不对或没开通':c==='timeout'?'豆包语音太慢了':'豆包语音出错了'+(e&&e.status?'（'+e.status+(e.msg?' '+e.msg:'')+'）':'')}
+/* 和 listen() 用法一样：开始录音，stop() 后上传识别，再回调结果 */
+function listenDb(onText,onEnd){
+  let done=false,stream=null,ac=null,node=null,src=null,chunks=[],rate=48000,stopped=false,mic=null,lab='',t0=0,auto;
+  const finish=(got)=>{if(done)return;done=true;clearTimeout(auto);onEnd(!!got)};
+  const cleanup=()=>{try{node&&node.disconnect();src&&src.disconnect()}catch(e){}try{stream&&stream.getTracks().forEach(t=>t.stop())}catch(e){}try{ac&&ac.close()}catch(e){}};
+  setTimeout(()=>{mic=document.querySelector('.mic.on');if(mic&&!t0){lab=mic.textContent;mic.textContent='⏳ 准备中，请稍等…'}},0);
+  const rec={stop:async()=>{if(stopped)return;stopped=true;cleanup();
+      const dur=t0?(Date.now()-t0)/1000:0;if(dur<0.4||!chunks.length){finish(false);return}
+      if(mic)mic.textContent='☁️ 豆包正在听写…';
+      try{const t=await asrSend(wavFrom(chunks,rate));ALTS=t?[t]:[];if(t)onText(t);finish(!!t)}
+      catch(e){toast(asrErrMsg(e)+'，先换回苹果自带的识别');if(e&&(e.code==='network'||e.code==='auth'))ASR_BROKEN=true;finish(false)}},
+    abort:()=>{stopped=true;cleanup();finish(false)},_finish:()=>{}};
+  rec._finish=()=>{};
+  (async()=>{try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+      if(stopped){cleanup();return}
+      ac=new (window.AudioContext||window.webkitAudioContext)();rate=ac.sampleRate;src=ac.createMediaStreamSource(stream);node=ac.createScriptProcessor(4096,1,1);
+      node.onaudioprocess=e=>{if(!stopped)chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)))};src.connect(node);node.connect(ac.destination);
+      t0=Date.now();if(mic&&lab&&mic.textContent.startsWith('⏳')){mic.textContent=lab;beep('ok')}
+      auto=setTimeout(()=>rec.stop(),40000)}
+    catch(e){toast('麦克风没打开：请在提示里点「允许」');cleanup();finish(false)}})();
+  ALTS=[];return rec}
+
 function altsOf(results){const base=[...results].map(x=>x[0].transcript),out=[base.join('')];
   [...results].forEach((x,k)=>{for(let j=1;j<x.length&&out.length<8;j++){const b=base.slice();b[k]=x[j].transcript;out.push(b.join(''))}});return out}
 const cands=said=>ALTS.length&&ALTS[0].trim()===String(said).trim()?ALTS:[said];
 function listen(onText,onEnd,hold,lang){
+  if(asrOn())return listenDb(onText,onEnd);
   if(!srOK)return null;let got=false,alive=false,done=false,wd,mic=null,lab='';ALTS=[];
   /* 麦克风真正打开后才提示「正在听」，避免一开口前几个词没录上 */
   setTimeout(()=>{mic=document.querySelector('.mic.on');if(mic&&!alive){lab=mic.textContent;mic.textContent='⏳ 准备中，请稍等…'}},0);
@@ -1644,6 +1741,7 @@ function runStep(ctx,step){
   const list=step.ex?ctx.items.map(it=>gen&&ctx.mode==='day'?genFor(it):it).filter(hasEx):ctx.items;
   if(!list.length)return Promise.resolve();
   switch(step.key){
+    case 'intro':return introStep(ctx,list);
     case 'match':return masteryLoop(ctx,list,(l,lab)=>matchRound(ctx,l,lab));
     case 'vsay':return zhSayStep(ctx,list);
     case 'venzh':case 'vzhen':case 'enzh':case 'zhen':return masteryLoop(ctx,list,(l,lab)=>choiceRound(ctx,l,lab,step.key));
@@ -1660,16 +1758,17 @@ async function runDay(){
   const ctx={tok:++RUN,mode:'day',items,pool:items};
   S.day.started=true;save();flowShell(ctx);window.scrollTo(0,0);
   if(S.day.step<=STEPS.findIndex(x=>x.key==='cloze'))genJob(items); // 后台提前编句子
-  const cv=curveSet();
+  if(S.day.step===0)tipJob(items.filter(it=>S.day.newIds.includes(it.id))); // 后台想记忆窍门
+  const ds=daySets(),cv=ds.B;
   for(let i=S.day.step;i<STEPS.length;i++){
-    const step=STEPS[i];ctx.step=step;drawMini(i);ctx.items=NEW_ONLY.has(step.key)?items.filter(it=>!cv.has(it.id)):items;
+    const step=STEPS[i];ctx.step=step;drawMini(i);{const ids=stepIds(step.key,ds);ctx.items=ids?items.filter(it=>ids.has(it.id)):items}
     if(step.key==='read'){const ej=exJob(items);if(ej){$('#gbody').innerHTML=`<div class="card result stack"><div class="ptitle">${esc(S.pet.name)}正在给新单词配例句…</div><p>有些单词还没有例句，AI 正在写，一般几秒钟。</p><div class="row center"><button class="btn small" id="exSkip">不等了</button></div></div>`;
       await Promise.race([ej,new Promise(ok=>{$('#exSkip').onclick=ok})]);if(!alive(ctx))return}}
     if(step.key==='fill'||step.key==='cloze'){await ensureGen(ctx);if(!alive(ctx))return}
     const n=step.key==='srev'?(ctx.mode==='day'?dueSents().length:0):step.key==='talk'?patCount():step.ex?ctx.items.map(it=>step.key==='fill'||step.key==='cloze'?genFor(it):it).filter(hasEx).length:ctx.items.length;
     if(!n||(step.key==='cloze'&&n<2)){S.day.step=i+1;save();continue}
     $('#fTitle').textContent=step.ico+' '+step.name;$('#fRound').textContent=`第 ${i+1}/${STEPS.length} 关`;
-    await pause(ctx,`第 ${i+1} 关：${step.name}`,`<p>${step.desc}</p><p class="hint">${step.key==='talk'?patSummary():step.ex||step.key==='srev'?n+' 个句子':n+' 个单词'}${NEW_ONLY.has(step.key)&&cv.size?`（复习词跳过这一关）`:''}</p>`,'开始');
+    await pause(ctx,`第 ${i+1} 关：${step.name}`,`<p>${step.desc}</p><p class="hint">${step.key==='talk'?patSummary():step.ex||step.key==='srev'?n+' 个句子':n+' 个单词'}${STEP_WHO[step.key]||''}</p>`,'开始');
     if(!alive(ctx))return;
     await runStep(ctx,step);if(!alive(ctx))return;
     S.day.step=i+1;save();beep('win');
@@ -1678,11 +1777,13 @@ async function runDay(){
 }
 function finishDay(ctx){
   const t=today(),d=S.day,newly=[];
-  for(const id of d.revIds){const r=S.srs[id];if(!r)continue;r.reviews=(r.reviews||0)+1;r.last=t;
+  for(const id of d.revIds){const r=S.srs[id];if(!r)continue;r.reviews=(r.reviews||0)+1;r.last=t;const ph=phaseOf(r);
+    if(ph==='A'){r.ph++;r.weak=!!d.missed[id];r.due=addDays(t,1);continue} // A 段：连着练 3 天
+    if(ph==='B'){if(d.missed[id]){r.weak=true;r.due=addDays(t,1)}else{r.ph=9;r.weak=false;r.st=1;r.due=addDays(t,INTERVALS[1])}continue} // B 段全对才进入遗忘曲线
     if(d.missed[id]){r.st=0;r.weak=true;r.due=addDays(t,1)}
     else if(r.weak){r.weak=false;r.st=1;r.due=addDays(t,INTERVALS[1])} // 巩固全对：开始按遗忘曲线复习
     else{r.st++;if(r.st>=INTERVALS.length){r.mastered=true;r.masteredOn=t;newly.push(id)}else r.due=addDays(t,INTERVALS[r.st])}}
-  for(const id of d.newIds){S.srs[id]={st:0,due:addDays(t,INTERVALS[0]),learned:t,last:t,reviews:0};if(d.missed[id])S.srs[id].weak=true}
+  for(const id of d.newIds){S.srs[id]={ph:1,st:0,due:addDays(t,1),learned:t,last:t,reviews:0};if(d.missed[id])S.srs[id].weak=true}
   if(S.streak.last!==t){S.streak.n=S.streak.last===addDays(t,-1)?S.streak.n+1:1;S.streak.last=t}
   S.history.push({date:t,n:d.newIds.length,r:d.revIds.length,miss:Object.keys(d.missed).length});
   finishPats(t);{const m=applyXp(30);bubbleText=m||'今天的任务完成啦！我也长大了一点～喂我吃苹果吧！'}d.done=true;d.mastered=newly;S.food+=5;save();hud();checkBadges();beep('win');
@@ -1704,7 +1805,7 @@ function renderToday(){
       ${d.mastered&&d.mastered.length?`<div><div class="secl">新掌握的单词</div>${chips(d.mastered,'rev')}</div>`:''}
       <p class="hint">明天要复习 ${dueOn(addDays(today(),1))} 个旧单词，再学 ${newQuota()} 个新词。${weakCount()?`（巩固中的词有 ${weakCount()} 个，不会的词最多 ${WEAK_MAX} 个，新词会相应减少）`:''}</p>
       <div class="row center"><button class="btn go" data-go="pet">去喂${esc(S.pet.name)}</button>${nextNew(1).length&&newQuota()?'<button class="btn" id="extra">再学一组新词（加餐）</button>':''}</div></div></div>`;
-    const ex=$('#extra');if(ex)ex.onclick=()=>{S.day={date:today(),newIds:nextNew(newQuota()),revIds:[],curveIds:[],step:0,missed:{},started:false,done:false,extra:true,patRev:[],patNew:[]};save();renderToday()};
+    const ex=$('#extra');if(ex)ex.onclick=()=>{S.day={date:today(),newIds:nextNew(newQuota()),revIds:[],aIds:[],bIds:[],curveIds:[],step:0,missed:{},started:false,done:false,extra:true,patRev:[],patNew:[]};save();renderToday()};
     return;
   }
   if(!items.length){
@@ -1714,12 +1815,14 @@ function renderToday(){
   }
   const revs=d.revIds.map(id=>m.get(id)).filter(Boolean),news=d.newIds.map(id=>m.get(id)).filter(Boolean);
   $('#view').innerHTML=`<div class="stack">
-   <div><h2>${d.extra?'加餐':'今日任务'} · ${d.date.slice(5).replace('-','月')}日</h2><p class="sub">${revs.length?`先复习 ${revs.length} 个旧单词，`:''}学 ${news.length} 个新单词，再练几句日常对话。中途可以暂停，下次接着来。</p>
+   <div><h2>${d.extra?'加餐':'今日任务'} · ${d.date.slice(5).replace('-','月')}日</h2><p class="sub">学 ${news.length} 个新单词${revs.length?`，练 ${revs.length} 个前几天的词`:''}，最后练几句日常对话。中途可以暂停，下次接着来。</p>
      ${d.from?`<div class="help">这是 ${d.from.slice(5).replace('-','月')}日 没做完的任务，进度都保留着，接着做完就行。</div>`:''}
      ${!d.extra&&news.length<S.newPerDay&&weakCount()>=WEAK_MAX-S.newPerDay&&weakCount()?`<div class="help">还有 ${weakCount()} 个词在巩固中，不会的词最多 ${WEAK_MAX} 个，所以今天${news.length?`只学 ${news.length} 个`:'先不学'}新词。把巩固的词练会，新词就会多起来。</div>`:''}</div>
    <div class="card stack" style="gap:10px">
-    ${revs.filter(i=>S.srs[i.id]&&S.srs[i.id].weak).length?`<div><div class="secl">巩固（之前错过，今天全对才算过关）</div><div class="wordchips">${revs.filter(i=>S.srs[i.id]&&S.srs[i.id].weak).map(i=>`<span class="wc miss">${esc(i.en)}</span>`).join('')}</div></div>`:''}
-    ${revs.filter(i=>!(S.srs[i.id]&&S.srs[i.id].weak)).length?`<div><div class="secl">复习（按遗忘曲线到期，只做说中文、拼写和句子）</div><div class="wordchips">${revs.filter(i=>!(S.srs[i.id]&&S.srs[i.id].weak)).map(i=>`<span class="wc rev">${esc(i.en)}</span>`).join('')}</div></div>`:''}
+    ${(()=>{const ds=daySets(),A=revs.filter(i=>ds.A.has(i.id)),B=revs.filter(i=>d.bIds&&d.bIds.includes(i.id)),C=revs.filter(i=>!ds.A.has(i.id)&&!(d.bIds&&d.bIds.includes(i.id)));
+      const sec=(t,l,cls)=>l.length?`<div><div class="secl">${t}</div><div class="wordchips">${l.map(i=>`<span class="wc ${cls}">${esc(i.en)}</span>`).join('')}</div></div>`:'';
+      return sec('前几天的新词 · 第 2–3 天（跟读、配对、选择题、说中文）',A,'new')+sec('第 4 天（跟读、说中文、拼写、句子）',B,'rev')
+        +sec('巩固（之前错过，今天全对才算过关）',C.filter(i=>S.srs[i.id]&&S.srs[i.id].weak),'miss')+sec('复习（按遗忘曲线到期）',C.filter(i=>!(S.srs[i.id]&&S.srs[i.id].weak)),'rev')})()}
     ${news.length?`<div><div class="secl">新单词</div><div class="wordchips">${news.map(i=>`<span class="wc new">${esc(i.en)} ${esc(i.zh)}</span>`).join('')}</div></div>`:''}
     ${noEx.length?`<div class="help">有 ${noEx.length} 个词还没有例句（${noEx.slice(0,4).map(i=>esc(i.en)).join('、')}${noEx.length>4?'…':''}），句子关卡会跳过它们。
       ${aiReady()?'<button class="btn small" id="aiT" style="margin-top:6px">✨ 让 AI 配例句</button>':'可以在词库里导入时写上例句。'}</div>`:''}
@@ -2196,9 +2299,22 @@ function aiSettingsHTML(){
    <div><label class="lb" for="aiVModel">看图模型 ID（拍照导入用，可不填）</label><input type="text" id="aiVModel" value="${esc(c.vmodel||'')}" placeholder="在「视觉模型」里开通一个，复制它的模型 ID"></div>
    <div class="row"><button class="btn go" id="aiSave">保存并测试</button>${c.on?'<button class="btn" id="aiOffBtn">关闭 AI</button>':''}<span class="sub" id="aiStat" style="margin:0">${c.on?'已连接 ✓':'未开启'}</span></div>
    <div class="help">设置方法：在火山方舟控制台开通一个豆包模型 → 创建 API Key → 把 Key 和模型 ID 填到上面。Key 只保存在这台设备的浏览器里，建议在方舟里给账号设一个用量上限。<br>
-   如果测试提示「连不上」，多半是浏览器的跨域限制：把接口地址换成你自己的转发服务地址，Key 填在转发服务里，这里留空即可。</div>`;
+   如果测试提示「连不上」，多半是浏览器的跨域限制：把接口地址换成你自己的转发服务地址，Key 填在转发服务里，这里留空即可。</div>
+   <h3 style="margin:14px 0 0;font-size:18px">语音识别（豆包语音，可选）</h3>
+   <p class="hint" style="margin:0">不填就用苹果自带的识别。填好后，跟读、说中文、每日对话都改用豆包听写，更准，中英文混着读也能认。</p>
+   ${(()=>{const a=asrCfg();return `<div><label class="lb" for="asrKey">豆包语音 API Key（新版控制台）/ App ID（旧版）</label><input type="password" id="asrKey" value="${esc(a.key)}" autocomplete="off"></div>
+   <div><label class="lb" for="asrAcc">Access Token（只有旧版控制台需要，新版留空）</label><input type="password" id="asrAcc" value="${esc(a.access)}" autocomplete="off"></div>
+   <div><label class="lb" for="asrUrl">识别接口地址</label><input type="text" id="asrUrl" value="${esc(a.url)}"></div>
+   <div class="row"><button class="btn go" id="asrSave" type="button">保存并测试</button>${a.on?'<button class="btn" id="asrOff" type="button">改回苹果识别</button>':''}<span class="sub" id="asrStat" style="margin:0">${a.on?(ASR_BROKEN?'这次连不上，暂时用苹果识别':'已开启 ✓'):'未开启（用苹果自带识别）'}</span></div>
+   <div class="help">开通方法：火山引擎控制台 → 豆包语音 → 开通「录音文件识别大模型（极速版）」→ 创建 API Key，填到上面。费用按识别时长算，建议在控制台看一下价格和免费额度。</div>`})()}`;
 }
 function bindAISettings(){
+  const as=$('#asrSave');if(as)as.onclick=async()=>{const a={url:$('#asrUrl').value.trim()||ASR_DEF.url,key:$('#asrKey').value.trim(),access:$('#asrAcc').value.trim(),res:ASR_DEF.res,on:false};
+    if(!a.key&&/openspeech/.test(a.url)){$('#asrStat').textContent='请先填 API Key';return}
+    try{localStorage.setItem('doudou-asr',JSON.stringify(a))}catch(e){}as.disabled=true;$('#asrStat').textContent='测试中…';
+    try{const sil=new Float32Array(16000);await asrSend(wavFrom([sil],16000));a.on=true;ASR_BROKEN=false;srOK=true;try{localStorage.setItem('doudou-asr',JSON.stringify(a))}catch(e){}toast('豆包语音连接成功！');renderDecks()}
+    catch(e){$('#asrStat').textContent=asrErrMsg(e);as.disabled=false}};
+  const ao=$('#asrOff');if(ao)ao.onclick=()=>{const a=asrCfg();a.on=false;try{localStorage.setItem('doudou-asr',JSON.stringify(a))}catch(e){}toast('已改回苹果自带识别');renderDecks()};
   const sv=$('#aiSave');if(!sv)return;
   sv.onclick=async()=>{const c={url:$('#aiUrl').value.trim(),key:$('#aiKey').value.trim(),model:$('#aiModel').value.trim(),vmodel:$('#aiVModel').value.trim(),on:false};
     if(!c.model){$('#aiStat').textContent='请先填模型 ID';return}
@@ -2271,7 +2387,7 @@ function foldCards(){document.querySelectorAll('#view .card').forEach(c=>{const 
   const key=h.textContent.split('·')[0].trim();const d=document.createElement('details');d.className=c.className.replace(/\bstack\b/,'')+' fold';if(openSecs.has(key))d.open=true;
   const sm=document.createElement('summary');sm.appendChild(h);const body=document.createElement('div');body.className='stack foldbody';body.style.gap='12px';
   while(c.firstChild)body.appendChild(c.firstChild);d.append(sm,body);c.replaceWith(d);d.addEventListener('toggle',()=>{d.open?openSecs.add(key):openSecs.delete(key)})})}
-function statusTag(it){const r=S.srs[it.id];if(!r)return '<span class="tag2">未学</span>';if(r.mastered)return '<span class="tag2 m">已掌握</span>';if(r.weak)return `<span class="tag2 w">${r.due<=today()?'今天巩固':'巩固中'}</span>`;
+function statusTag(it){const r=S.srs[it.id];if(!r)return '<span class="tag2">未学</span>';if(r.mastered)return '<span class="tag2 m">已掌握</span>';if(phaseOf(r)==='A')return `<span class="tag2">第 ${r.ph+1} 天</span>`;if(phaseOf(r)==='B')return `<span class="tag2 ${r.weak?'w':''}">第 4 天练习</span>`;if(r.weak)return `<span class="tag2 w">${r.due<=today()?'今天巩固':'巩固中'}</span>`;
   return `<span class="tag2 r">${r.due<=today()?'今天复习':r.due.slice(5).replace('-','/')+' 复习'}</span>`}
 function renderDecks(){
   const m=wordMap();
@@ -2318,7 +2434,7 @@ function renderDecks(){
     <div class="setrow"><label class="lb" for="vslow" style="margin:0">发音放慢一点</label><input type="checkbox" id="vslow" ${voiceCfg().slow?'checked':''}> <button class="btn small" id="vtest" type="button">🔊 试听</button></div>
     <div class="setrow"><label class="lb" for="mrv" style="margin:0">每天最多复习</label><select id="mrv">${[5,10,15,20,30].map(n=>`<option ${n===S.maxReview?'selected':''}>${n}</option>`).join('')}</select></div>
     <div class="setrow"><label class="lb" for="spr" style="margin:0">底部显示「自由练习」</label><input type="checkbox" id="spr" ${S.showPractice?'checked':''} style="width:24px;height:24px;accent-color:var(--leaf)"></div>
-    <p class="hint" style="margin:0">复习按遗忘曲线安排：学完第 1、2、4、7、15 天后各复习一次。复习时全部做对就进入下一档，出错就从头再来；连续 5 次复习都对就进「已掌握」。</p></div>
+    <p class="hint" style="margin:0">新词先连着练 3 天（认、读、配对、选择题），第 4 天练说中文、拼写和句子，全对后按遗忘曲线在 2、4、7、15、30 天后各复习一次。出错就每天巩固到全对再接着复习；全部复习都对就进「已掌握」。</p></div>
 
    <div class="card"><h2 style="font-size:21px">每日对话问句 · 学过 ${Object.keys(S.pats||{}).length}/${allPatIds().length}</h2><p class="sub">每天学 3 个问句（回答不算在内），第二天开始按遗忘曲线考，连续 5 次都说对就算掌握。</p>${patListHTML()}
     <div class="stack" style="gap:10px;margin-top:14px"><label class="lb" for="dlgText" style="margin:0">导入自己的问句（会排在内置问句前面学）</label>
