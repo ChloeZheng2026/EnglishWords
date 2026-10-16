@@ -116,6 +116,8 @@ select{font:inherit;font-weight:700;padding:8px 12px;border-radius:12px;border:2
 .tile.sel{background:var(--sun-soft);border-color:var(--sun);transform:translateY(-3px)}
 .tile.ok{background:var(--leaf-soft);border-color:var(--leaf);transform:scale(.6);opacity:0;pointer-events:none}
 .bad{animation:shake .4s}
+
+.garea.shake{animation:shake .4s}
 @keyframes shake{20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
 
 .slotline{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;min-height:62px;padding:12px;border-radius:18px;border:2px dashed var(--line);background:var(--surface2)}
@@ -453,20 +455,26 @@ function bestVoice(re,pref){const vs=voices.filter(v=>re.test(v.lang)&&!BAD_VOIC
   const sc=v=>(/premium|高音质/i.test(v.name)?40:/enhanced|增强/i.test(v.name)?30:0)+(pref.findIndex(p=>v.name.includes(p))>=0?20-pref.findIndex(p=>v.name.includes(p)):0)+(v.localService?1:0);
   return vs.sort((a,b)=>sc(b)-sc(a))[0]}
 const voiceCfg=()=>({src:S.vsrc||'yd',slow:!!S.vslow});
-function sysSay(t,lang){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t),slow=voiceCfg().slow;
+let SAYTOK=0;
+/* cb：读完时回调（被打断就不回调）；带一个保底计时，防止有的设备不触发结束事件 */
+function sayDone(tok,cb,t){if(!cb)return ()=>{};let fired=false;const f=()=>{if(fired||tok!==SAYTOK)return;fired=true;clearTimeout(g);cb()};
+  const g=setTimeout(f,2500+String(t).split(/\s+/).length*650+String(t).replace(/[\x00-\x7f]/g,'').length*280);return f}
+function sysSay(t,lang,cb,tok){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t),slow=voiceCfg().slow;
   if(lang==='zh'){u.lang='zh-CN';u.rate=slow?.8:.9;const v=bestVoice(/zh[-_]CN/i,['Tingting','婷婷','Lili','Meijia'])||bestVoice(/^zh/i,[]);if(v)u.voice=v}
   else{u.lang='en-US';const long=t.split(' ').length>2;u.rate=(long?.8:.85)*(slow?.85:1);const v=bestVoice(/en[-_]US/i,['Samantha','Ava','Allison','Susan','Zoe','Nicky','Joelle'])||bestVoice(/^en/i,['Karen','Daniel','Serena']);if(v)u.voice=v}
-  speechSynthesis.speak(u)}catch(e){}}
+  if(cb){const d=sayDone(tok==null?SAYTOK:tok,cb,t);u.onend=()=>setTimeout(d,250)}
+  speechSynthesis.speak(u)}catch(e){if(cb)setTimeout(cb,500)}}
 /* 英文优先用有道词典的真人发音（国内能直接访问，单词和句子都可以），连不上或出错就自动换系统发音 */
 const AUD=typeof Audio!=='undefined'?new Audio():null;let audOK=true,audUnlocked=false,audTok=0;
 if(AUD){AUD.preload='auto';document.addEventListener('pointerdown',()=>{if(audUnlocked)return;audUnlocked=true;
   try{AUD.src='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=';const p=AUD.play();if(p)p.catch(()=>{})}catch(e){}},{capture:true})}
-function hush(){try{speechSynthesis.cancel()}catch(e){}try{if(AUD){audTok++;AUD.pause()}}catch(e){}}
-function say(t,lang='en'){t=String(t||'').trim();if(!t)return;
-  if(lang==='zh'||!AUD||!audOK||voiceCfg().src!=='yd'||navigator.onLine===false){hush();return sysSay(t,lang)}
-  hush();const tok=++audTok;let started=false;
-  const fall=()=>{if(tok!==audTok||started)return;audTok++;try{AUD.pause()}catch(e){}sysSay(t,lang)};
-  try{AUD.onplaying=()=>{if(tok===audTok)started=true};AUD.onerror=()=>{if(tok===audTok&&!started){audFails++;if(audFails>=3)audOK=false;fall()}};
+function hush(){SAYTOK++;try{speechSynthesis.cancel()}catch(e){}try{if(AUD){audTok++;AUD.pause()}}catch(e){}}
+function say(t,lang='en',cb){t=String(t||'').trim();if(!t){if(cb)cb();return}
+  if(lang==='zh'||!AUD||!audOK||voiceCfg().src!=='yd'||navigator.onLine===false){hush();return sysSay(t,lang,cb,SAYTOK)}
+  hush();const tok=++audTok,st=SAYTOK;let started=false;const done=sayDone(st,cb,t);
+  const fall=()=>{if(tok!==audTok||started)return;audTok++;try{AUD.pause()}catch(e){}sysSay(t,lang,cb?done:null,st)};
+  try{AUD.onplaying=()=>{if(tok===audTok)started=true};AUD.onended=()=>{if(tok===audTok&&cb)setTimeout(done,250)};
+    AUD.onerror=()=>{if(tok===audTok&&!started){audFails++;if(audFails>=3)audOK=false;fall()}};
     AUD.src='https://dict.youdao.com/dictvoice?type=2&audio='+encodeURIComponent(t.slice(0,600));AUD.playbackRate=voiceCfg().slow?.85:1;
     const p=AUD.play();if(p)p.catch(()=>fall());setTimeout(()=>{if(!started)fall()},3000)}catch(e){fall()}}
 let audFails=0;
@@ -830,42 +838,44 @@ function zhHit(said,ref){const b=[...new Set(zhClean(ref))],a=zhClean(said);if(!
 const READ_EN=.75,READ_ZH=.6;
 const bestEn=(said,ref)=>cands(said).map(c=>enWordsHit(c,ref)).sort((a,b)=>b.score-a.score)[0];
 const bestZh=(said,ref)=>Math.max(...cands(said).map(c=>zhHit(c,ref)));
+/* 跟读：每一遍都是「先听系统读 → 孩子跟着读」。点一下开始，之后几遍自动连着走。
+   麦克风只用来判断孩子有没有出声（苹果的识别对孩子不准，不按单词判对错）。没有麦克风就读完点按钮 */
 function readPass(ctx,list){return new Promise(res=>{
-  /* 当天的新词读 3 遍，其他（前几天的词、复习词）读 1 遍 */
   const reps=it=>ctx.mode==='day'&&S.day&&!S.day.newIds.includes(it.id)?1:3;
-  const ui=roundUI(ctx,`${list.length} 个句子 · 新词读 3 遍${list.some(x=>reps(x)===1)?'，学过的词读 1 遍':''}`);let i=0,badRun=0;
+  const ui=roundUI(ctx,`${list.length} 个句子 · 新词读 3 遍${list.some(x=>reps(x)===1)?'，学过的词读 1 遍':''}`);let i=0;
   function q(){
     if(!alive(ctx))return;if(i>=list.length)return res(new Set());ui.prog(i/list.length);
-    const it=list[i],N=reps(it),scoring=S.readScore!==false&&srOK;let n=0,fails=0,rec=null,done=false,txt='',alts=[],stopT=0;
+    const it=list[i],N=reps(it),useMic=S.readScore!==false&&srOK;let n=0,rec=null,done=false,txt='',alts=[],stopT=0,running=false,tok=0;
     ui.body.innerHTML=`<div class="card prompt"><div class="sent" id="rEn">${hl(it)}</div><div class="hint" style="font-size:19px;color:var(--ink)">${esc(it.exZh)}</div><div class="rword"><b>${esc(it.en)}</b> ${esc(it.zh)}</div>
       <div class="rdots" id="rd">${'<span></span>'.repeat(N)}</div>${N===1?'<div class="hint" style="margin:-6px 0 8px">学过的词，读 1 遍就行</div>':''}
-      <div class="row center"><button class="btn" id="spk">🔊 英文</button><button class="btn" id="spkz">🔊 中文</button></div></div>
-      <div class="speakbox" style="margin-top:12px">${scoring?'<button class="mic hold" id="rMic" type="button">🎤 点一下开始读</button><div class="row center" style="margin-top:8px"><button class="btn small" id="did2" type="button">已经大声读完了，下一遍</button></div>':'<div class="row center"><button class="btn go" id="did" style="font-size:19px;padding:14px 26px">✓ 我读完了</button></div>'}
-      <p class="hint center" id="rTip" style="margin:8px 0 0">先听，再大声读：<b>先读英文，再读中文</b>。${scoring?'读完停一下，会自动结束。':'读完点上面的按钮。'}</p>
+      <div class="row center"><button class="btn small" id="spk">🔊 英文</button><button class="btn small" id="spkz">🔊 中文</button></div></div>
+      <div class="speakbox" style="margin-top:12px"><button class="mic hold" id="rGo" type="button">▶ 开始：先听，再跟读</button>
+      <div class="row center" style="margin-top:8px"><button class="btn small" id="rDid" type="button" hidden>✓ 我读完了</button></div>
+      <p class="hint center" id="rTip" style="margin:8px 0 0">系统先读一遍，然后你跟着大声读：<b>先读英文，再读中文</b>。</p>
       <div id="rFb" class="sayfb" hidden></div></div>`;
     ui.body.querySelectorAll('#rEn .tw').forEach(el=>el.onclick=()=>tapWord(el,el.dataset.tw,it.ex));
-    setTimeout(()=>say(it.ex),200);$('#spk').onclick=()=>say(it.ex);$('#spkz').onclick=()=>say(it.exZh,'zh');
-    const dot=()=>{if(done||n>=N)return true;n++;$('#rd').children[n-1].classList.add('on');beep('ok');
-      if(n>=N){done=true;const dd=$('#did');if(dd)dd.disabled=true;const m=$('#rMic');if(m)m.disabled=true;good(ctx,$('#rd'));i++;setTimeout(q,1300);return true}return false};
-    if(!scoring){$('#did').onclick=()=>{if(!dot()){say(it.ex)}};return}
-    const mic=$('#rMic'),fb=$('#rFb');$('#did2').onclick=()=>{if(rec){const r=rec;rec=null;try{r.abort()}catch(_){}mic.classList.remove('on')}fb.hidden=true;if(!dot())next()};
+    const go=$('#rGo'),did=$('#rDid'),fb=$('#rFb'),tip=$('#rTip');
+    $('#spk').onclick=()=>say(it.ex);$('#spkz').onclick=()=>say(it.exZh,'zh');
     const best=()=>(alts.length?alts:[txt]).map(c=>enWordsHit(c,it.ex)).sort((a,b)=>b.score-a.score)[0];
-    const paint=(r,end)=>{const toks=it.ex.split(/\s+/);let k=0;
-      $('#rEn').innerHTML=toks.map(t=>{const has=/[A-Za-z0-9]/.test(t);const ok=has?r.hit[k++]:true;return `<span class="${has&&ok&&txt?'rhit':''}">${esc(t)}</span>`}).join(' ')};
-    const stopRec=()=>{const r=rec;if(!r)return;clearTimeout(stopT);mic.textContent='好的，正在判断…';try{r.stop()}catch(_){}setTimeout(()=>r._finish&&r._finish(),2500)};
-    const next=()=>{mic.textContent=`🎤 点一下读第 ${n+1} 遍`;setTimeout(()=>{if(!done&&!rec)$('#rEn').innerHTML=hl(it)},1500)};
-    const judge=()=>{mic.classList.remove('on');clearTimeout(stopT);const r=best();fb.hidden=false;
-      $('#rEn').innerHTML=hl(it);
-      /* 苹果的识别对孩子不准，所以只要听到在读就算过，不再提示「漏读」 */
-      const heard=txt.trim().split(/\s+/).filter(Boolean).length;
-      if(!heard){fb.className='sayfb no';fb.innerHTML='没听到声音，<b>靠近一点、大声一点</b>再读一次';mic.textContent='🎤 再读一次';return}
-      fb.className='sayfb ok';fb.innerHTML=['✓ 读得好！','✓ 很棒，声音很响亮！','✓ 读完啦！'][Math.random()*3|0];if(!dot())next()};
-    const start=()=>{hush();txt='';alts=[];fb.hidden=true;$('#rEn').innerHTML=hl(it);
-      mic.classList.add('on');mic.textContent='● 正在听… 读完停一下就好';let allAt=0;
-      rec=listen(t=>{txt=t;alts=ALTS.slice();const r=best();paint(r,false);
-        if(r.score>=.95&&!allAt){allAt=1;clearTimeout(stopT);stopT=setTimeout(stopRec,2800)}},()=>{rec=null;judge()},true,'en-US');
-      if(!rec){mic.classList.remove('on');mic.hidden=true;ui.body.querySelector('.speakbox').insertAdjacentHTML('afterbegin','<div class="row center"><button class="btn go" id="did">✓ 我读完了</button></div>');$('#did').onclick=()=>{if(!dot())say(it.ex)}}};
-    mic.onclick=e=>{e.preventDefault();if(done)return;if(rec)stopRec();else start()};
+    const paint=r=>{const toks=it.ex.split(/\s+/);let k=0;$('#rEn').innerHTML=toks.map(t=>{const has=/[A-Za-z0-9]/.test(t);const ok=has?r.hit[k++]:true;return `<span class="${has&&ok&&txt?'rhit':''}">${esc(t)}</span>`}).join(' ')};
+    const dot=()=>{if(done||n>=N)return true;n++;$('#rd').children[n-1].classList.add('on');beep('ok');
+      if(n>=N){done=true;running=false;go.disabled=true;did.hidden=true;good(ctx,$('#rd'));fb.hidden=false;fb.className='sayfb ok';fb.innerHTML=['✓ 读得好！','✓ 很棒，声音很响亮！','✓ 读完啦！'][Math.random()*3|0];i++;setTimeout(q,1300);return true}return false};
+    const idle=lab=>{running=false;go.disabled=false;go.classList.remove('on');go.textContent=lab||`▶ 继续：听第 ${n+1} 遍`;did.hidden=true};
+    /* 一遍：系统读 → 跟读 */
+    const round=()=>{if(done||!alive(ctx))return;running=true;const my=++tok;fb.hidden=true;$('#rEn').innerHTML=hl(it);$('#rEn').classList.add('rnow');
+      go.disabled=true;go.classList.remove('on');go.textContent=`🔊 听第 ${n+1} 遍…`;tip.innerHTML='认真听，马上跟着读';did.hidden=true;
+      say(it.ex,'en',()=>{if(my!==tok||!alive(ctx))return;$('#rEn').classList.remove('rnow');
+        tip.innerHTML='轮到你了：<b>先读英文，再读中文</b>';beep('pop');
+        if(useMic)listenNow(my);else{go.textContent='🗣️ 大声跟读…';did.hidden=false}})};
+    const listenNow=my=>{txt='';alts=[];go.classList.add('on');go.disabled=false;go.textContent='● 正在听你读… 读完停一下';did.hidden=false;
+      rec=listen(t=>{txt=t;alts=ALTS.slice();const r=best();paint(r);if(r.score>=.95){clearTimeout(stopT);stopT=setTimeout(()=>stopRec(),2800)}},(got,denied)=>{rec=null;clearTimeout(stopT);if(my!==tok)return;go.classList.remove('on');
+        if(denied){go.textContent='🗣️ 大声跟读…';did.hidden=false;return} // 不能自动开麦：读完点按钮
+        if(!txt.trim()){fb.hidden=false;fb.className='sayfb no';fb.innerHTML='没听到声音，<b>靠近一点、大声一点</b>，我们再来一遍';idle('▶ 再来一遍：先听再读');return}
+        $('#rEn').innerHTML=hl(it);if(!dot())setTimeout(()=>{if(my===tok&&!done)round()},900)},true,'en-US',true);
+      if(!rec){go.textContent='🗣️ 大声跟读…';did.hidden=false}};
+    const stopRec=()=>{const r=rec;if(!r)return;go.textContent='好的…';try{r.stop()}catch(_){}setTimeout(()=>r._finish&&r._finish(),2500)};
+    go.onclick=e=>{e.preventDefault();if(done)return;if(rec){stopRec();return}if(!running)round()};
+    did.onclick=()=>{tok++;if(rec){const r=rec;rec=null;try{r.abort()}catch(_){}}go.classList.remove('on');$('#rEn').innerHTML=hl(it);if(!dot())setTimeout(()=>{if(!done)round()},600)};
   }
   q();
 })}
@@ -1237,20 +1247,20 @@ function listenDb(onText,onEnd){
 function altsOf(results){const base=[...results].map(x=>x[0].transcript),out=[base.join('')];
   [...results].forEach((x,k)=>{for(let j=1;j<x.length&&out.length<8;j++){const b=base.slice();b[k]=x[j].transcript;out.push(b.join(''))}});return out}
 const cands=said=>ALTS.length&&ALTS[0].trim()===String(said).trim()?ALTS:[said];
-function listen(onText,onEnd,hold,lang){
+function listen(onText,onEnd,hold,lang,soft){
   if(asrOn())return listenDb(onText,onEnd);
   if(!srOK)return null;let got=false,alive=false,done=false,wd,mic=null,lab='',silT;ALTS=[];
   /* 麦克风真正打开后才提示「正在听」，避免一开口前几个词没录上 */
   setTimeout(()=>{mic=document.querySelector('.mic.on');if(mic&&!alive){lab=mic.textContent;mic.textContent='⏳ 准备中，请稍等…'}},0);
   const ready=()=>{if(alive)return;alive=true;if(mic&&lab&&mic.textContent.startsWith('⏳')){mic.textContent=lab;beep('ok')}};
-  const finish=()=>{if(done)return;done=true;clearTimeout(wd);clearTimeout(silT);onEnd(got)};
+  let R0=null;const finish=()=>{if(done)return;done=true;clearTimeout(wd);clearTimeout(silT);onEnd(got,R0&&R0._denied)};
   try{const r=new SRC();r.lang=lang||'en-US';r.interimResults=true;r.maxAlternatives=5;if(hold)r.continuous=true;
     r.onaudiostart=ready;r.onstart=()=>setTimeout(ready,350);
     r.onresult=e=>{got=true;ready();ALTS=altsOf(e.results);onText(ALTS[0]);if(hold){clearTimeout(silT);silT=setTimeout(()=>{try{r.stop()}catch(_){}},3000)}};
     if(hold)silT=setTimeout(()=>{if(!got){try{r.stop()}catch(_){}}},9000);
-    r.onerror=e=>{if(['not-allowed','service-not-allowed','audio-capture'].includes(e.error))srFail();finish()};
-    r.onend=finish;r.start();
-    wd=setTimeout(()=>{if(!alive){try{r.abort()}catch(e){}srSlow();finish()}},9000);
+    r.onerror=e=>{if(['not-allowed','service-not-allowed','audio-capture'].includes(e.error)){if(soft)r._denied=true;else srFail()}finish()};
+    R0=r;r.onend=finish;r.start();
+    wd=setTimeout(()=>{if(!alive){try{r.abort()}catch(e){}if(!soft)srSlow();finish()}},9000);
     r._finish=finish;return r}catch(e){srFail();return null}}
 const CONTR=[[/\bwhat's\b/g,'what is'],[/\bit's\b/g,'it is'],[/\bi'm\b/g,'i am'],[/\bdon't\b/g,'do not'],[/\bcan't\b/g,'cannot'],[/\bcan not\b/g,'cannot'],[/\bisn't\b/g,'is not'],[/\bhow's\b/g,'how is'],[/\bthat's\b/g,'that is'],[/\byou're\b/g,'you are'],[/\bwhere's\b/g,'where is'],[/\bwho's\b/g,'who is'],[/\blet's\b/g,'let us'],[/\bhe's\b/g,'he is'],[/\bshe's\b/g,'she is'],[/\bi've\b/g,'i have'],[/\bok\b/g,'okay']];
 const HOMO={to:'two',too:'two','2':'two',for:'four','4':'four',write:'right',their:'there',"they're":'there',eye:'i',eight:'ate','8':'ate',son:'sun',sea:'see',knew:'new',know:'no',our:'hour',blew:'blue',buy:'by',bye:'by',won:'one','1':'one',flour:'flower',meat:'meet',weak:'week',where:'wear',tale:'tail',bare:'bear',deer:'dear',pear:'pair',here:'hear',hole:'whole',plane:'plain',road:'rode',sail:'sale',wood:'would',piece:'peace','3':'three','5':'five','6':'six','7':'seven','9':'nine','10':'ten',mom:'mum',mommy:'mum',mother:'mother',colour:'color',favourite:'favorite',grey:'gray',ok:'okay'};
@@ -1863,7 +1873,13 @@ const SPECIES=[
  {id:'ocean',name:'海洋豆',body:'#4AA8E8',belly:'#DDF1FF'},
  {id:'star',name:'星星豆',body:'#F2B32A',belly:'#FFF3CC'},
  {id:'grape',name:'葡萄豆',body:'#9B7BD8',belly:'#EFE7FF'},
- {id:'snow',name:'雪球豆',body:'#E4ECF4',belly:'#FFFFFF',stroke:'#B5C4D3'}];
+ {id:'snow',name:'雪球豆',body:'#E4ECF4',belly:'#FFFFFF',stroke:'#B5C4D3'},
+ {id:'sakura',name:'樱花豆',body:'#FF9EC4',belly:'#FFE6F0'},
+ {id:'mint',name:'薄荷豆',body:'#5FD3B8',belly:'#E0FBF4'},
+ {id:'choco',name:'巧克力豆',body:'#9A6A4F',belly:'#F2E1D3'},
+ {id:'pumpkin',name:'南瓜豆',body:'#FF9F2E',belly:'#FFEBD0'},
+ {id:'night',name:'夜空豆',body:'#4B5BA8',belly:'#DCE2FF'},
+ {id:'rainbow',name:'彩虹豆',body:'#FF7AA8',belly:'#FFF1C9'}];
 const spOf=id=>SPECIES.find(s=>s.id===id)||SPECIES[0];
 const ORN={
  leaf:`<path fill="#FFC52E" d="M100 48 Q82 26 100 16 Q118 26 100 48 Z"/><path class="p-mouth" style="stroke-width:3" d="M100 48 L100 56"/>`,
@@ -1871,7 +1887,13 @@ const ORN={
  ocean:`<path fill="#2F86C9" d="M84 50 Q96 18 124 26 Q108 30 112 50 Z"/>`,
  star:`<path stroke="#C9951A" stroke-width="3" fill="none" d="M100 48 L100 30"/><path fill="#FFE066" stroke="#C9951A" stroke-width="2" d="M100 8 l5 10 11 2 -8 8 2 11 -10 -5 -10 5 2 -11 -8 -8 11 -2 z"/>`,
  grape:`<path stroke="#6B4F2A" stroke-width="4" fill="none" d="M100 50 Q98 34 106 26"/><path fill="#5DBB63" d="M106 28 Q126 14 134 30 Q118 38 106 28 Z"/>`,
- snow:`<g stroke="#8FB3D9" stroke-width="3" stroke-linecap="round"><path d="M100 16 L100 46 M87 23 L113 39 M113 23 L87 39"/></g>`};
+ snow:`<g stroke="#8FB3D9" stroke-width="3" stroke-linecap="round"><path d="M100 16 L100 46 M87 23 L113 39 M113 23 L87 39"/></g>`,
+ sakura:`<g fill="#FF6FA5">${[0,72,144,216,288].map(a=>`<ellipse cx="100" cy="20" rx="7" ry="11" transform="rotate(${a} 100 32)"/>`).join('')}</g><circle cx="100" cy="32" r="5" fill="#FFE066"/>`,
+ mint:`<path fill="#2FAF8C" d="M100 50 Q80 34 88 14 Q104 26 100 50 Z"/><path fill="#47C9A2" d="M100 50 Q120 34 112 14 Q96 26 100 50 Z"/>`,
+ choco:`<path fill="#6B4430" d="M86 46 Q86 20 100 14 Q114 20 114 46 Z"/><path stroke="#F2E1D3" stroke-width="3" fill="none" d="M90 30 Q100 24 110 30 M90 38 Q100 32 110 38"/>`,
+ pumpkin:`<path stroke="#4E8C3A" stroke-width="5" stroke-linecap="round" fill="none" d="M100 48 Q100 30 110 22"/><path fill="#5DBB63" d="M108 26 Q124 14 128 28 Q116 34 108 26 Z"/>`,
+ night:`<path fill="#FFE066" d="M112 12 A20 20 0 1 0 112 48 A15 15 0 1 1 112 12 Z"/><circle cx="84" cy="18" r="2.5" fill="#FFF"/><circle cx="124" cy="40" r="2" fill="#FFF"/>`,
+ rainbow:`<g fill="none" stroke-width="5" stroke-linecap="round"><path stroke="#FF5A5A" d="M76 46 A24 24 0 0 1 124 46"/><path stroke="#FFC52E" d="M82 46 A18 18 0 0 1 118 46"/><path stroke="#4CBB72" d="M88 46 A12 12 0 0 1 112 46"/><path stroke="#4AA8E8" d="M94 46 A6 6 0 0 1 106 46"/></g>`};
 const ITEMS=[
  {id:'cap',slot:'hat',ic:'🧢',name:'小红帽',price:8},{id:'bow',slot:'hat',ic:'🎀',name:'蝴蝶结',price:6},
  {id:'straw',slot:'hat',ic:'👒',name:'草帽',price:10},{id:'wizard',slot:'hat',ic:'🧙',name:'魔法帽',price:15},
@@ -1913,7 +1935,7 @@ const level=()=>lvlOf(S.pet.xp);
 const stageOf=l=>l<2?0:l<4?1:l<7?2:3;
 const stage=()=>stageOf(level());
 const STAGE_NAME=['神秘蛋','宝宝','少年','大王'];
-const GRAD_LV=10;
+let GRAD_LV=10;const updGrad=()=>{GRAD_LV=Math.min(30,10+2*((S&&S.dex)||[]).length)};updGrad(); // 每毕业一只，下一只要多养 2 级
 function mood(){const h=S.pet.hunger,j=S.pet.joy??60;if(petNight())return 'sleep';return h<25||j<20?'sad':h>60&&j>50?'happy':'ok'}
 function petInner(o){ // 宠物画在 0..200 坐标里
   const sp=spOf(o.sp),st=o.st,m=o.mood||'happy',eq=o.eq||{};
@@ -2113,7 +2135,7 @@ function renderPet(){
      <div><div class="mlabel">心情<span>${joy}%</span></div><div class="meter"><i id="joyBar" style="width:${joy}%;background:var(--coral)"></i></div></div>
      <div><div class="mlabel">饱腹度<span>${Math.round(p.hunger)}%</span></div><div class="meter"><i style="width:${p.hunger}%;background:${hc}"></i></div></div>
      <div class="row center"><button class="btn sun" id="feed">🍎 喂苹果（剩 ${S.food} 个）</button><button class="btn" id="patBtn">✋ 摸摸头</button></div>
-     <div class="row center"><button class="btn go" id="gameBtn" ${stage()===0?'disabled':''}>🎮 陪${esc(p.name)}玩接苹果（${GC} 🍎）</button></div>
+     <div class="row center"><button class="btn go" id="gameBtn" ${stage()===0?'disabled':''}>🎮 陪${esc(p.name)}玩接苹果 · 第 ${S.catchLv||1} 关（${GC} 🍎）</button></div>
      <p class="hint center" style="margin:0">摸头 1 🍎 · 玩游戏 ${GC} 🍎（会消耗饱腹度）· 苹果靠完成今日任务、和${esc(p.name)}聊天来赚</p>
      <p class="hint center" style="margin:0">点小屋里的${esc(p.name)}，每天会有一个小惊喜；商店买礼物会让它心情变好</p>
      ${canGrad?`<div class="help center">${esc(p.name)}已经长成大王啦！毕业后它会住进图鉴，你会得到一颗新蛋，孵出新的豆豆伙伴。买过的衣服和家具都会保留。
@@ -2185,33 +2207,38 @@ function playCatch(){
   if(S.food<GAME_COST){beep('bad');return setBubble(`玩一次要 ${GAME_COST} 个苹果，去和我聊天或者做今日任务赚苹果吧！`)}
   if(p.hunger<20){beep('bad');return setBubble('我太饿了，跑不动…先喂我吃个苹果吧')}
   S.food-=GAME_COST;save();hud();
+  /* 关卡：每过一关，东西掉得更快、虫子更多，第 3 关起有炸弹，第 5 关起会左右飘 */
+  const lv=S.catchLv||1,target=Math.min(60,8+4*(lv-1)),spd=1+.12*(lv-1),bugP=Math.min(.38,.18+.03*(lv-1)),bombP=lv>=3?Math.min(.1,.03+.01*(lv-3)):0,zig=lv>=5;
   const ov=document.createElement('div');ov.className='gameov';
-  ov.innerHTML=`<div class="gtop"><span>🍎 <b id="gScore">0</b></span><span>⏱ <b id="gTime">25</b> 秒</span><button class="btn small" id="gQuit">结束</button></div>
+  ov.innerHTML=`<div class="gtop"><span>第 <b>${lv}</b> 关</span><span>🍎 <b id="gScore">0</b> / ${target}</span><span>⏱ <b id="gTime">25</b></span><button class="btn small" id="gQuit">结束</button></div>
     <div class="garea" id="garea"><div class="gpet" id="gpet">${miniPet(p.sp,'')}</div></div>
-    <p class="ghint">手指左右拖，让${name}接住 🍎（⭐ 加 3 分），躲开 🐛</p>`;
+    <p class="ghint">左右拖动，让${name}接住 🍎（⭐ 加 3 分），躲开 🐛${bombP?' 和 💣（扣 5 分）':''}。25 秒内拿到 ${target} 分就过关！</p>`;
   document.body.appendChild(ov);
   const area=$('#garea'),pet=$('#gpet');let W=area.clientWidth,H=area.clientHeight,px=W/2,score=0,t0=performance.now(),items=[],last=0,run=true,lt=0;
   const move=x=>{px=Math.max(32,Math.min(W-32,x))};
   const at=e=>{const r=area.getBoundingClientRect();move(e.clientX-r.left)};
   area.addEventListener('pointerdown',at);area.addEventListener('pointermove',at);
-  function spawn(){const r=Math.random(),k=r<.2?'🐛':r<.3?'⭐':'🍎';const el=document.createElement('div');el.className='gitem';el.textContent=k;area.appendChild(el);
-    items.push({el,x:20+Math.random()*(W-40),y:-36,v:140+Math.random()*90+(performance.now()-t0)/120,k})}
+  function spawn(){const r=Math.random(),k=r<bugP?'🐛':r<bugP+bombP?'💣':r<bugP+bombP+.1?'⭐':'🍎';const el=document.createElement('div');el.className='gitem';el.textContent=k;area.appendChild(el);
+    const x0=30+Math.random()*(W-60);items.push({el,x:x0,x0,ph:Math.random()*6,y:-36,v:(140+Math.random()*90)*spd+(performance.now()-t0)/120,k})}
   function frame(now){if(!run)return;const dt=Math.min(.05,(now-(lt||now))/1000);lt=now;
     const left=25-(now-t0)/1000;$('#gTime').textContent=Math.max(0,Math.ceil(left));if(left<=0)return end();
-    if(now-last>Math.max(320,620-(now-t0)/60)){spawn();last=now}
+    if(now-last>Math.max(240,620-(lv-1)*25-(now-t0)/60)){spawn();last=now}
     pet.style.transform=`translateX(${px-42}px)`;
-    for(const it of items.slice()){it.y+=it.v*dt;it.el.style.transform=`translate(${it.x-16}px,${it.y}px)`;
-      if(it.y>H-95&&it.y<H-25&&Math.abs(it.x-px)<46){if(it.k==='🐛'){score=Math.max(0,score-2);beep('bad');pet.classList.add('ouch');setTimeout(()=>pet.classList.remove('ouch'),300)}else{score+=it.k==='⭐'?3:1;beep('pop')}
+    for(const it of items.slice()){it.y+=it.v*dt;if(zig)it.x=Math.max(16,Math.min(W-16,it.x0+Math.sin(it.y/45+it.ph)*Math.min(60,20+lv*5)));it.el.style.transform=`translate(${it.x-16}px,${it.y}px)`;
+      if(it.y>H-95&&it.y<H-25&&Math.abs(it.x-px)<46){if(it.k==='🐛'||it.k==='💣'){score=Math.max(0,score-(it.k==='💣'?5:2));beep('bad');if(it.k==='💣')area.classList.add('shake'),setTimeout(()=>area.classList.remove('shake'),400);pet.classList.add('ouch');setTimeout(()=>pet.classList.remove('ouch'),300)}else{score+=it.k==='⭐'?3:1;beep('pop')}
         $('#gScore').textContent=score;it.el.remove();items.splice(items.indexOf(it),1)}
       else if(it.y>H){it.el.remove();items.splice(items.indexOf(it),1)}}
     requestAnimationFrame(frame)}
-  function end(){if(!run)return;run=false;const xp=Math.min(60,score*2);p.joy=Math.min(100,(p.joy??60)+25);p.hunger=Math.max(0,p.hunger-15);const m=applyXp(xp);save();beep('win');
-    area.innerHTML=`<div class="gend"><div class="ptitle">接到 ${score} 分！</div><p>${name}获得 ${xp} 成长值，心情 +25，跑累了饱腹度 -15</p>${m?`<p><b>${esc(m)}</b></p>`:''}<button class="btn go" id="gOk">好的</button></div>`;
+  function end(){if(!run)return;run=false;const pass=score>=target,xp=Math.min(80,score*2+(pass?10:0));p.joy=Math.min(100,(p.joy??60)+25);p.hunger=Math.max(0,p.hunger-15);
+    if(pass){S.catchLv=lv+1;S.food+=2;hud()}S.catchBest=Math.max(S.catchBest||0,lv+(pass?1:0));const m=applyXp(xp);save();beep(pass?'win':'ok');
+    area.innerHTML=`<div class="gend"><div class="ptitle">${pass?`🎉 第 ${lv} 关通过！`:`接到 ${score} 分，差一点！`}</div>
+      <p>${pass?`奖励 2 个苹果。下一关（第 ${lv+1} 关）目标 ${Math.min(60,8+4*lv)} 分，会更难哦！`:`过关要 ${target} 分，下次加油！`}</p>
+      <p>${name}获得 ${xp} 成长值，心情 +25，跑累了饱腹度 -15</p>${m?`<p><b>${esc(m)}</b></p>`:''}<button class="btn go" id="gOk">好的</button></div>`;
     $('#gOk').onclick=()=>{ov.remove();bubbleText=m||'好好玩！再陪我玩一次吧～';renderPet()}}
   $('#gQuit').onclick=end;requestAnimationFrame(frame);
 }
 function graduate(){
-  const p=S.pet;S.dex.push({sp:p.sp,name:p.name,date:today()});
+  const p=S.pet;S.dex.push({sp:p.sp,name:p.name,date:today()});updGrad();
   const next=SPECIES.find(s=>!S.dex.some(d=>d.sp===s.id))||SPECIES[Math.random()*SPECIES.length|0];
   S.pet={name:'小蛋',xp:0,hunger:60,joy:60,t:Date.now(),sp:next.id};gradArmed=false;talk=null;petTab='dex';
   bubbleText='（新的蛋来啦！会孵出什么呢？）';save();beep('win');checkBadges();renderPet();toast(p.name+' 毕业啦，住进了图鉴！');
