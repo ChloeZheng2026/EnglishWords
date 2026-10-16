@@ -427,10 +427,29 @@ const hasEx=it=>!!(it.ex&&blankRe(it).test(it.ex));
 let voices=[];
 function loadVoices(){try{voices=speechSynthesis.getVoices()}catch(e){}}
 try{loadVoices();speechSynthesis.onvoiceschanged=loadVoices}catch(e){}
-function say(t,lang='en'){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);
-  if(lang==='zh'){u.lang='zh-CN';u.rate=.9;const v=voices.find(v=>/zh[-_]CN/i.test(v.lang))||voices.find(v=>/^zh/i.test(v.lang));if(v)u.voice=v}
-  else{u.lang='en-US';u.rate=t.includes(' ')&&t.split(' ').length>2?.78:.85;const v=voices.find(v=>/en[-_]US/i.test(v.lang))||voices.find(v=>/^en/i.test(v.lang));if(v)u.voice=v}
+/* 系统发音：挑最清楚的声音（增强/高音质优先），避开 iPad 上那些搞怪声音 */
+const BAD_VOICE=/Albert|Bad News|Bahh|Bells|Boing|Bubbles|Cellos|Wobble|Zarvox|Trinoids|Whisper|Jester|Organ|Superstar|Ralph|Fred|Junior|Kathy|Good News|Hysterical|Deranged|Grandma|Grandpa|Rocko|Sandy|Shelley|Eddy|Flo|Reed/i;
+function bestVoice(re,pref){const vs=voices.filter(v=>re.test(v.lang)&&!BAD_VOICE.test(v.name));if(!vs.length)return null;
+  const sc=v=>(/premium|高音质/i.test(v.name)?40:/enhanced|增强/i.test(v.name)?30:0)+(pref.findIndex(p=>v.name.includes(p))>=0?20-pref.findIndex(p=>v.name.includes(p)):0)+(v.localService?1:0);
+  return vs.sort((a,b)=>sc(b)-sc(a))[0]}
+const voiceCfg=()=>({src:S.vsrc||'yd',slow:!!S.vslow});
+function sysSay(t,lang){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t),slow=voiceCfg().slow;
+  if(lang==='zh'){u.lang='zh-CN';u.rate=slow?.8:.9;const v=bestVoice(/zh[-_]CN/i,['Tingting','婷婷','Lili','Meijia'])||bestVoice(/^zh/i,[]);if(v)u.voice=v}
+  else{u.lang='en-US';const long=t.split(' ').length>2;u.rate=(long?.8:.85)*(slow?.85:1);const v=bestVoice(/en[-_]US/i,['Samantha','Ava','Allison','Susan','Zoe','Nicky','Joelle'])||bestVoice(/^en/i,['Karen','Daniel','Serena']);if(v)u.voice=v}
   speechSynthesis.speak(u)}catch(e){}}
+/* 英文优先用有道词典的真人发音（国内能直接访问，单词和句子都可以），连不上或出错就自动换系统发音 */
+const AUD=typeof Audio!=='undefined'?new Audio():null;let audOK=true,audUnlocked=false,audTok=0;
+if(AUD){AUD.preload='auto';document.addEventListener('pointerdown',()=>{if(audUnlocked)return;audUnlocked=true;
+  try{AUD.src='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=';const p=AUD.play();if(p)p.catch(()=>{})}catch(e){}},{capture:true})}
+function hush(){try{speechSynthesis.cancel()}catch(e){}try{if(AUD){audTok++;AUD.pause()}}catch(e){}}
+function say(t,lang='en'){t=String(t||'').trim();if(!t)return;
+  if(lang==='zh'||!AUD||!audOK||voiceCfg().src!=='yd'||navigator.onLine===false){hush();return sysSay(t,lang)}
+  hush();const tok=++audTok;let started=false;
+  const fall=()=>{if(tok!==audTok||started)return;audTok++;try{AUD.pause()}catch(e){}sysSay(t,lang)};
+  try{AUD.onplaying=()=>{if(tok===audTok)started=true};AUD.onerror=()=>{if(tok===audTok&&!started){audFails++;if(audFails>=3)audOK=false;fall()}};
+    AUD.src='https://dict.youdao.com/dictvoice?type=2&audio='+encodeURIComponent(t.slice(0,600));AUD.playbackRate=voiceCfg().slow?.85:1;
+    const p=AUD.play();if(p)p.catch(()=>fall());setTimeout(()=>{if(!started)fall()},3000)}catch(e){fall()}}
+let audFails=0;
 
 let AC;
 function beep(kind){if(!S.snd)return;try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();
@@ -582,7 +601,7 @@ function zhParts(zh){return String(zh).replace(/\b[a-z]{1,5}\.\s*/gi,'').replace
 function judgeZhLocal(said,zh){const t=String(said).replace(/[\s，。！？,.!?、]/g,'');if(!t)return false;const T=t.replace(/[的地得了呀啊吧呢]/g,'');
   return zhParts(zh).some(m=>{const M=m.replace(/[的地得了]/g,'');if(!M)return false;if(T.includes(M)||(T.length>=2&&M.includes(T)))return true;
     if(M.length>=3){let n=0;for(const c of M)if(T.includes(c))n++;return n/M.length>=.67}return false})}
-async function judgeZh(said,it){if(judgeZhLocal(said,it.zh))return true;if(!aiReady())return false;
+async function judgeZh(said,it){if(cands(said).some(c=>judgeZhLocal(c,it.zh)))return true;if(!aiReady())return false;
   try{const r=await aiJSON(`英文「${it.en}」的中文意思是「${it.zh}」。一个小学生用语音说出了他理解的中文意思，语音识别成文字是：「${said}」（可能有同音字识别错误，要按读音理解）。意思对、意思相近就算对。只回复 JSON：{"ok":true 或 false}`,10000);return !!(r&&r.ok)}catch(e){return false}}
 /* 说/写中文的通用题：按住说中文或打字，提交后直接判断；错了显示答案 */
 function zhAnswerOne(ctx,ui,o){return new Promise(res=>{
@@ -596,15 +615,19 @@ function zhAnswerOne(ctx,ui,o){return new Promise(res=>{
   ui.body.querySelectorAll('.tw').forEach(el=>el.onclick=()=>tapWord(el,el.dataset.tw,o.sayText));
   const fb=$('#zFb'),mic=$('#zMic'),inp=$('#zIn');
   const lock=()=>{over=true;if(mic)mic.disabled=true;inp.disabled=true;$('#zForm button').disabled=true};
+  let tries=0;
   const judge=async said=>{if(busy||over)return;busy=true;fb.hidden=false;fb.className='sayfb';fb.textContent='你说的是：'+said+'　正在判断…';
-    const ok=await o.judge(said);if(!alive(ctx))return;busy=false;lock();
+    const ok=await o.judge(said);if(!alive(ctx))return;busy=false;
+    if(!ok&&tries===0){tries++;beep('bad');fb.className='sayfb no';fb.innerHTML=`你说的是：${esc(said)}<br>好像不对，<b>再说一次</b>（可能是没听清）`;inp.value='';ALTS=[];return}
+    lock();
     if(ok){beep('ok');fb.className='sayfb ok';fb.innerHTML=`✓ 对了！你说：${esc(said)}<br>${o.label||'意思'}：<b>${esc(o.answer)}</b>`;good(ctx,fb);setTimeout(()=>res(true),o.okDelay||1300)}
     else{beep('bad');if(o.onWrong)o.onWrong();fb.className='sayfb no';
       fb.innerHTML=`你说的是：${esc(said)}<br>${o.wrongLabel||'正确意思'}：<b>${esc(o.answer)}</b>${o.wrongNote?`<br><small>${o.wrongNote}</small>`:''}<div class="row center" style="margin-top:8px"><button class="btn small sun" id="zNext" type="button">记住了，下一个</button></div>`;
       say(o.sayText);$('#zNext').onclick=()=>res(false)}};
+  inp.addEventListener('input',()=>{ALTS=[]});
   $('#zForm').onsubmit=e=>{e.preventDefault();const v=inp.value.trim();if(v)judge(v)};
   if(mic){
-    const start=()=>{if(busy||over)return;try{speechSynthesis.cancel()}catch(_){}txt='';inp.value='';
+    const start=()=>{if(busy||over)return;try{hush()}catch(_){}txt='';inp.value='';
       rec=listen(t=>{txt=t;inp.value=t},()=>{rec=null;mic.classList.remove('on');mic.textContent='🎤 点一下开始说中文';
         if(!srOK){mic.hidden=true;inp.placeholder='点这里，用键盘上的 🎤 说中文';return}
         if(txt.trim())judge(txt.trim());else toast('没听清，再点一下说一次')},true,'zh-CN');
@@ -619,7 +642,7 @@ function zhSayOne(ctx,ui,it,hint,extraHTML){return zhAnswerOne(ctx,ui,{extraHTML
 const zhClean=t=>String(t||'').replace(/[\s，。！？、；：,.!?;:“”"'‘’（）()…]/g,'');
 function judgeTransLocal(said,ref){const a=zhClean(said),b=zhClean(ref);if(!a||!b)return false;if(a===b)return true;
   let n=0;for(const c of new Set(b))if(a.includes(c))n++;return n/new Set(b).size>=.7&&a.length>=b.length*.6&&a.length<=b.length*1.8}
-async function judgeTrans(said,it){if(judgeTransLocal(said,it.exZh))return true;if(!aiReady())return false;
+async function judgeTrans(said,it){if(cands(said).some(c=>judgeTransLocal(c,it.exZh)))return true;if(!aiReady())return false;
   try{const r=await aiJSON(`一个小学生在把英文句子翻译成中文。
 英文：${it.ex}
 ${it.exZh?'参考翻译：'+it.exZh+'\n':''}孩子的翻译（语音识别成文字，可能有同音字错误，要按读音理解）：${said}
@@ -752,10 +775,12 @@ async function fillStep(ctx,list){
 function hl(it){const sp=splitBlank(it);return wordSpans(sp.before)+'<mark>'+esc(sp.form)+'</mark>'+wordSpans(sp.after)}
 /* 跟读：每句读 3 遍，每遍先读英文再读中文。点一下开始，英文读完会自动转到中文，读完自动判断（也可以再点一下结束） */
 function enWordsHit(said,ref){const want=normEn(ref).split(' ').filter(Boolean),got=normEn(said).split(' ').filter(Boolean);const used=new Set();
-  const hit=want.map(w=>{const k=got.findIndex((g,j)=>!used.has(j)&&(g===w||(w.length>=4&&lev(g,w)<=1)||(w.length>=7&&lev(g,w)<=2)));if(k>=0){used.add(k);return true}return false});
+  const hit=want.map(w=>{const k=got.findIndex((g,j)=>!used.has(j)&&(g===w||(w.length>=3&&lev(g,w)<=1)||(w.length>=6&&lev(g,w)<=2)||(j+1<got.length&&g+got[j+1]===w)));if(k>=0){used.add(k);return true}return false});
   return {want,hit,score:want.length?hit.filter(Boolean).length/want.length:0}}
 function zhHit(said,ref){const b=[...new Set(zhClean(ref))],a=zhClean(said);if(!b.length)return 1;return b.filter(c=>a.includes(c)).length/b.length}
-const READ_EN=.8,READ_ZH=.7;
+const READ_EN=.75,READ_ZH=.6;
+const bestEn=(said,ref)=>cands(said).map(c=>enWordsHit(c,ref)).sort((a,b)=>b.score-a.score)[0];
+const bestZh=(said,ref)=>Math.max(...cands(said).map(c=>zhHit(c,ref)));
 function readPass(ctx,list){return new Promise(res=>{
   const ui=roundUI(ctx,`${list.length} 个句子 · 每句 3 遍`);let i=0;
   function q(){
@@ -772,10 +797,10 @@ function readPass(ctx,list){return new Promise(res=>{
     const dot=()=>{if(done||n>=3)return true;n++;$('#rd').children[n-1].classList.add('on');beep('ok');if(n>=3){done=true;const dd=$('#did');if(dd)dd.disabled=true;good(ctx,$('#rd'));i++;setTimeout(q,1200);return true}return false};
     if(!srOK){$('#did').onclick=()=>{if(!dot())$('#did').textContent=`我读完第 ${n+1} 遍`};return}
     const mic=$('#rMic'),fb=$('#rFb'),tip=$('#rTip');
-    const showEn=()=>{const r=enWordsHit(enTxt,it.ex);const toks=it.ex.split(/\s+/);let k=0;
+    let enAlts=[],zhAlts=[];const showEn=()=>{const r=(enAlts.length?enAlts:[enTxt]).map(c=>enWordsHit(c,it.ex)).sort((a,b)=>b.score-a.score)[0];const toks=it.ex.split(/\s+/);let k=0;
       $('#rEn').innerHTML=toks.map(t=>{const has=/[A-Za-z0-9]/.test(t);const ok=has?r.hit[k++]:true;return `<span class="${phase?'':''}${has&&(phase==='zh'||phase==='end')&&!ok?'rmiss':has&&ok&&enTxt?'rhit':''}">${esc(t)}</span>`}).join(' ');return r};
     const finish=()=>{phase='end';mic.disabled=false;mic.classList.remove('on');
-      const er=showEn(),zs=zhHit(zhTxt,it.exZh),ok=er.score>=READ_EN&&zs>=READ_ZH;fb.hidden=false;
+      const er=showEn(),zs=Math.max(...(zhAlts.length?zhAlts:[zhTxt]).map(c=>zhHit(c,it.exZh))),ok=er.score>=READ_EN&&zs>=READ_ZH;fb.hidden=false;
       const miss=er.want.filter((w,k)=>!er.hit[k]);
       if(ok){fb.className='sayfb ok';fb.innerHTML=`✓ 读得好！英文 ${Math.round(er.score*100)} 分，中文 ${Math.round(zs*100)} 分`;fails=0;
         if(!dot()){mic.textContent=`🎤 点一下读第 ${n+1} 遍`;setTimeout(()=>{if(!done&&phase==='end')$('#rEn').innerHTML=hl(it)},1500)}else mic.disabled=true}
@@ -784,11 +809,11 @@ function readPass(ctx,list){return new Promise(res=>{
           ${fails>=3?'<div class="row center" style="margin-top:8px"><button class="btn small sun" id="rSkip" type="button">这一遍先算过，下一遍</button></div>':''}`;
         mic.textContent=`🎤 再读一次第 ${n+1} 遍`;const sk=$('#rSkip');if(sk)sk.onclick=()=>{markMiss(ctx,it.id);fails=0;fb.hidden=true;if(!dot())mic.textContent=`🎤 点一下读第 ${n+1} 遍`}}};
     const startZh=()=>{phase='zh';tip.innerHTML='现在读中文：<b>'+esc(it.exZh)+'</b>（读完点一下）';$('#rZh').classList.add('rnow');
-      rec=listen(t=>{zhTxt=t;if(zhHit(t,it.exZh)>=.9&&rec){const r=rec;setTimeout(()=>{try{r.stop()}catch(_){}},400)}},()=>{rec=null;$('#rZh').classList.remove('rnow');tip.innerHTML='先读英文，再读中文。英文读完会自动换成中文。';finish()},true,'zh-CN');
+      rec=listen(t=>{zhTxt=t;zhAlts=ALTS.slice();if(zhHit(t,it.exZh)>=.9&&rec){const r=rec;setTimeout(()=>{try{r.stop()}catch(_){}},400)}},()=>{rec=null;$('#rZh').classList.remove('rnow');tip.innerHTML='先读英文，再读中文。英文读完会自动换成中文。';finish()},true,'zh-CN');
       if(!rec)finish()};
-    const startEn=()=>{try{speechSynthesis.cancel()}catch(_){}enTxt='';zhTxt='';fb.hidden=true;phase='en';$('#rEn').innerHTML=hl(it);
+    const startEn=()=>{try{hush()}catch(_){}enTxt='';zhTxt='';enAlts=[];zhAlts=[];fb.hidden=true;phase='en';$('#rEn').innerHTML=hl(it);
       mic.classList.add('on');mic.textContent='● 正在听… 读完点这里';tip.innerHTML='先读英文：大声读上面的句子';beep('pop');
-      rec=listen(t=>{enTxt=t;const r=showEn();if(r.score>=.95&&rec){const x=rec;setTimeout(()=>{try{x.stop()}catch(_){}},400)}},()=>{rec=null;
+      rec=listen(t=>{enTxt=t;enAlts=ALTS.slice();const r=showEn();if(r.score>=.95&&rec){const x=rec;setTimeout(()=>{try{x.stop()}catch(_){}},400)}},()=>{rec=null;
         if(!srOK){mic.hidden=true;tip.textContent='这里用不了语音，读完点下面的按钮';ui.body.querySelector('.speakbox').insertAdjacentHTML('beforeend','<div class="row center"><button class="btn go" id="did">我读完这一遍</button></div>');$('#did').onclick=()=>dot();return}
         if(phase==='en')startZh()},true,'en-US');
       if(!rec){mic.classList.remove('on');phase=''}};
@@ -881,7 +906,7 @@ function clozeRound(ctx,list,story){return new Promise(res=>{
       else{b.state='wrongb';bad++;if(!wrong.has(b.it.id)){wrong.add(b.it.id);if(first)markMiss(ctx,b.it.id)}}});
     first=false;draw();
     if(!bad){beep('win');$('#chk').outerHTML='<button class="btn sun" id="cont">🔊 听短文，然后继续</button>';
-      say(story?story.text:blanks.map(b=>b.it.ex).join(' '));$('#cont').onclick=()=>{try{speechSynthesis.cancel()}catch(e){}res(wrong)};return}
+      say(story?story.text:blanks.map(b=>b.it.ex).join(' '));$('#cont').onclick=()=>{try{hush()}catch(e){}res(wrong)};return}
     beep('bad');toast(`有 ${bad} 个空填错了，再想想！`);
     setTimeout(()=>{blanks.forEach(b=>{if(b.state==='wrongb'){b.val=null;b.vj=null;b.state=''}});sel=blanks.findIndex(b=>!b.val);draw()},1100);
   }
@@ -1111,26 +1136,36 @@ const IOS_SAFARI=IOS&&/Safari\//.test(UA)&&!/CriOS|FxiOS|EdgiOS|MQQBrowser|QQ\/|
 let srOK=!!SRC&&location.protocol!=='file:'&&(!IOS||IOS_SAFARI);
 try{if(localStorage.getItem('doudou-sr-off'))srOK=false}catch(e){}
 function srFail(){if(!srOK)return;srOK=false;try{localStorage.setItem('doudou-sr-off','1')}catch(e){}toast('这里的语音按钮用不了，请点输入框，用键盘上的 🎤 说话')}
+/* 识别结果的几个候选（最多 5 个），判断时每个都试一下，取最好的，减少「明明说对了却判错」 */
+let ALTS=[];
+function altsOf(results){const base=[...results].map(x=>x[0].transcript),out=[base.join('')];
+  [...results].forEach((x,k)=>{for(let j=1;j<x.length&&out.length<8;j++){const b=base.slice();b[k]=x[j].transcript;out.push(b.join(''))}});return out}
+const cands=said=>ALTS.length&&ALTS[0].trim()===String(said).trim()?ALTS:[said];
 function listen(onText,onEnd,hold,lang){
-  if(!srOK)return null;let got=false,alive=false,done=false,wd;
+  if(!srOK)return null;let got=false,alive=false,done=false,wd,mic=null,lab='';ALTS=[];
+  /* 麦克风真正打开后才提示「正在听」，避免一开口前几个词没录上 */
+  setTimeout(()=>{mic=document.querySelector('.mic.on');if(mic&&!alive){lab=mic.textContent;mic.textContent='⏳ 准备中，请稍等…'}},0);
+  const ready=()=>{if(alive)return;alive=true;if(mic&&lab&&mic.textContent.startsWith('⏳')){mic.textContent=lab;beep('ok')}};
   const finish=()=>{if(done)return;done=true;clearTimeout(wd);onEnd(got)};
-  try{const r=new SRC();r.lang=lang||'en-US';r.interimResults=true;r.maxAlternatives=1;if(hold)r.continuous=true;
-    r.onstart=r.onaudiostart=()=>{alive=true};
-    r.onresult=e=>{got=true;alive=true;let t='';for(const x of e.results)t+=x[0].transcript;onText(t)};
+  try{const r=new SRC();r.lang=lang||'en-US';r.interimResults=true;r.maxAlternatives=5;if(hold)r.continuous=true;
+    r.onaudiostart=ready;r.onstart=()=>setTimeout(ready,350);
+    r.onresult=e=>{got=true;ready();ALTS=altsOf(e.results);onText(ALTS[0])};
     r.onerror=e=>{if(['not-allowed','service-not-allowed','audio-capture'].includes(e.error))srFail();finish()};
     r.onend=finish;r.start();
     wd=setTimeout(()=>{if(!alive){try{r.abort()}catch(e){}srFail();finish()}},5000);
     r._finish=finish;return r}catch(e){srFail();return null}}
 const CONTR=[[/\bwhat's\b/g,'what is'],[/\bit's\b/g,'it is'],[/\bi'm\b/g,'i am'],[/\bdon't\b/g,'do not'],[/\bcan't\b/g,'cannot'],[/\bcan not\b/g,'cannot'],[/\bisn't\b/g,'is not'],[/\bhow's\b/g,'how is'],[/\bthat's\b/g,'that is'],[/\byou're\b/g,'you are'],[/\bwhere's\b/g,'where is'],[/\bwho's\b/g,'who is'],[/\blet's\b/g,'let us'],[/\bhe's\b/g,'he is'],[/\bshe's\b/g,'she is'],[/\bi've\b/g,'i have'],[/\bok\b/g,'okay']];
-function normEn(s){s=String(s).toLowerCase().replace(/[’‘`]/g,"'");for(const [a,b] of CONTR)s=s.replace(a,b);return s.replace(/[^a-z0-9' ]/g,' ').replace(/\s+/g,' ').trim()}
+const HOMO={to:'two',too:'two','2':'two',for:'four','4':'four',write:'right',their:'there',"they're":'there',eye:'i',eight:'ate','8':'ate',son:'sun',sea:'see',knew:'new',know:'no',our:'hour',blew:'blue',buy:'by',bye:'by',won:'one','1':'one',flour:'flower',meat:'meet',weak:'week',where:'wear',tale:'tail',bare:'bear',deer:'dear',pear:'pair',here:'hear',hole:'whole',plane:'plain',road:'rode',sail:'sale',wood:'would',piece:'peace','3':'three','5':'five','6':'six','7':'seven','9':'nine','10':'ten',mom:'mum',mommy:'mum',mother:'mother',colour:'color',favourite:'favorite',grey:'gray',ok:'okay'};
+function normEn(s){s=String(s).toLowerCase().replace(/[’‘`]/g,"'");for(const [a,b] of CONTR)s=s.replace(a,b);return s.replace(/[^a-z0-9' ]/g,' ').replace(/\s+/g,' ').trim().split(' ').map(w=>HOMO[w]||w).join(' ')}
 function lev(a,b){const m=a.length,n=b.length;let prev=Array.from({length:n+1},(_,j)=>j);
   for(let i=1;i<=m;i++){const cur=[i];for(let j=1;j<=n;j++)cur[j]=Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));prev=cur}return prev[n]}
 const simR=(a,b)=>!a||!b?0:1-lev(a,b)/Math.max(a.length,b.length);
 function tmplRe(a){return new RegExp('^'+a.split('{x}').map(p=>escRe(normEn(p))).join(' ?(.+?) ?')+'$')}
 const tidy=s=>{s=String(s).trim();if(!s)return s;s=s[0].toUpperCase()+s.slice(1);return /[.?!]$/.test(s)?s:s+'.'};
-function judgeLocal(said,refs,res){const n=normEn(said);
-  for(const r of refs){const m=normEn(r);if(n===m||simR(n,m)>=.88)return {ok:true,fixed:r}}
-  for(const re of res||[])if(re.test(n))return {ok:true,fixed:tidy(said)};
+function judgeLocal(said,refs,res){
+  for(const c of cands(said)){const n=normEn(c);
+  for(const r of refs){const m=normEn(r);if(n===m||simR(n,m)>=.84)return {ok:true,fixed:r}}
+  for(const re of res||[])if(re.test(n))return {ok:true,fixed:tidy(c)}}
   return {ok:false,fixed:refs[0]||tidy(said),tip:''}}
 async function judgeSpeech(o){
   const local=judgeLocal(o.said,o.refs,o.res);
@@ -1153,13 +1188,14 @@ function bindSpeakBox(onSubmit){
   const inp=$('#sayIn'),mic=$('#micBtn');let rec=null,txt='';
   const off=()=>{if(mic)mic.hidden=true;const h=$('#holdTip');if(h)h.hidden=true;const t=$('#kbTip');if(t)t.hidden=false;inp.placeholder='点这里，用键盘上的 🎤 说英语'};
   if(mic){
-    const start=()=>{try{speechSynthesis.cancel()}catch(_){}txt='';inp.value='';
+    const start=()=>{try{hush()}catch(_){}txt='';inp.value='';
       rec=listen(t=>{txt=t;inp.value=t},()=>{rec=null;mic.classList.remove('on');mic.textContent='🎤 点一下开始说';if(!srOK)return off();
         if(txt.trim())onSubmit(txt.trim());else toast('没听清，再点一下说一次')},true);
       if(rec){mic.classList.add('on');mic.textContent='● 正在听… 说完点这里';beep('pop')}else off()};
     const stop=()=>{const r=rec;if(!r)return;mic.textContent='好的，正在识别…';setTimeout(()=>{try{r.stop()}catch(_){}},250);setTimeout(()=>r._finish&&r._finish(),2500)};
     mic.onclick=e=>{e.preventDefault();if(rec)stop();else start()};
   }
+  inp.addEventListener('input',()=>{ALTS=[]});
   $('#sayForm').onsubmit=e=>{e.preventDefault();const v=inp.value.trim();if(v)onSubmit(v)};
 }
 /* 说一句话的题目：说对才继续；连错两次可以跳过。返回是否第一次就说对 */
@@ -2271,6 +2307,8 @@ function renderDecks(){
    <div class="card stack" style="gap:10px"><h2 style="font-size:21px">学习设置</h2>
     <div class="setrow"><label class="lb" for="npd" style="margin:0">每天新单词</label><select id="npd">${[3,5,8,10].map(n=>`<option ${n===S.newPerDay?'selected':''}>${n}</option>`).join('')}</select></div>
     <div class="setrow"><label class="lb" for="tlv" style="margin:0">句子和对话难度</label><select id="tlv">${[['auto','自动（按使用中的词库）'],['kid','小学'],['mid','初中'],['high','高中']].map(([v,t])=>`<option value="${v}" ${(S.talkLv||'auto')===v?'selected':''}>${t}</option>`).join('')}</select></div>
+    <div class="setrow"><label class="lb" for="vsrc" style="margin:0">英文发音</label><select id="vsrc"><option value="yd" ${voiceCfg().src==='yd'?'selected':''}>有道真人发音（推荐，要联网）</option><option value="sys" ${voiceCfg().src==='sys'?'selected':''}>iPad 系统发音</option></select></div>
+    <div class="setrow"><label class="lb" for="vslow" style="margin:0">发音放慢一点</label><input type="checkbox" id="vslow" ${voiceCfg().slow?'checked':''}> <button class="btn small" id="vtest" type="button">🔊 试听</button></div>
     <div class="setrow"><label class="lb" for="mrv" style="margin:0">每天最多复习</label><select id="mrv">${[5,10,15,20,30].map(n=>`<option ${n===S.maxReview?'selected':''}>${n}</option>`).join('')}</select></div>
     <div class="setrow"><label class="lb" for="spr" style="margin:0">底部显示「自由练习」</label><input type="checkbox" id="spr" ${S.showPractice?'checked':''} style="width:24px;height:24px;accent-color:var(--leaf)"></div>
     <p class="hint" style="margin:0">复习按遗忘曲线安排：学完第 1、2、4、7、15 天后各复习一次。复习时全部做对就进入下一档，出错就从头再来；连续 5 次复习都对就进「已掌握」。</p></div>
@@ -2323,6 +2361,9 @@ function renderDecks(){
   bindImgImport('#impImg','#impImgFile','这是一张小学英语单词表或课本的照片。请识别出里面所有的英语单词或短语和中文意思；如果图片里有对应的英文例句和翻译，也一起提取。没有中文意思的单词，请补上简单的中文意思。只回复 JSON 数组，每项 {"en":"apple","zh":"苹果","ex":"英文例句，没有就留空","exZh":"例句翻译，没有就留空"}。',
     arr=>{const lines=arr.filter(x=>x&&x.en&&x.zh).map(x=>[x.en,x.zh,x.ex,x.exZh].map(v=>String(v||'').trim()).filter((v,k)=>k<2||v).join(' | '));const ta=$('#impText');ta.value=(ta.value.trim()?ta.value.trim()+'\n':'')+lines.join('\n');ta.dispatchEvent(new Event('input'));if(lines.length){const nm=impLab();setTimeout(()=>{toast(`识别出 ${lines.length} 条，检查一下，点「导入」放进${nm}`);const ib=$('#impBtn');ib.scrollIntoView({behavior:'smooth',block:'center'});ib.classList.add('pulse');setTimeout(()=>ib.classList.remove('pulse'),2400)},50)}return lines.length});
   $('#mrv').onchange=e=>{S.maxReview=+e.target.value;save()};
+  $('#vsrc').onchange=e=>{S.vsrc=e.target.value;audOK=true;audFails=0;save();say('The rabbit has long ears.')};
+  $('#vslow').onchange=e=>{S.vslow=e.target.checked;save();say('The rabbit has long ears.')};
+  $('#vtest').onclick=()=>say('Hello! The rabbit has long ears.');
   $('#tlv').onchange=e=>{S.talkLv=e.target.value;if(S.day&&!S.day.started&&!S.day.done){Object.assign(S.day,patPlan());save()}save();toast('难度已改为：'+e.target.selectedOptions[0].textContent)};
   $('#spr').onchange=e=>{S.showPractice=e.target.checked;save();hud();toast(S.showPractice?'「自由练习」已显示在底部':'「自由练习」已隐藏')};
   const ai=$('#aiD');if(ai)ai.onclick=()=>aiFill(ai,dNoEx);
@@ -2343,7 +2384,7 @@ function askPin(ok){let sh=$('#pinSheet');if(sh)sh.remove();sh=document.createEl
   inp.oninput=()=>{inp.value=inp.value.replace(/\D/g,'').slice(0,4);if(inp.value.length<4)return;
     if(inp.value===PIN){close();ok()}else{beep('bad');inp.classList.add('bad');setTimeout(()=>{inp.classList.remove('bad');inp.value=''},420)}}}
 function go(t){if(t!=='decks')pinOK=false;else if(!pinOK){return askPin(()=>{pinOK=true;go('decks')})}
-  tab=t;RUN++;keyH=null;{const ws=document.getElementById('wsheet');if(ws)ws.remove()}try{speechSynthesis.cancel()}catch(e){}
+  tab=t;RUN++;keyH=null;{const ws=document.getElementById('wsheet');if(ws)ws.remove()}try{hush()}catch(e){}
   document.querySelectorAll('.tab').forEach(b=>b.dataset.tab===t?b.setAttribute('aria-current','page'):b.removeAttribute('aria-current'));
   ({today:renderToday,practice:renderPractice,pet:renderPet,decks:renderDecks})[t]();hud();window.scrollTo(0,0)}
 document.addEventListener('click',e=>{
