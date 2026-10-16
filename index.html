@@ -850,25 +850,25 @@ function readPass(ctx,list){return new Promise(res=>{
   const reps=it=>ctx.mode==='day'&&S.day&&!S.day.newIds.includes(it.id)?1:3;
   const ui=roundUI(ctx,`${list.length} 个句子 · 新词读 3 遍${list.some(x=>reps(x)===1)?'，学过的词读 1 遍':''}`);let i=0;
   /* 跟读：系统读（每次都由点击触发，iPad 才会出声）→ 孩子读（可以点麦克风读，也可以读完点按钮） */
-  function simple(it,N){let n=0,rec=null,txt='',busy=false;const mic=srOK;
+  function simple(it,N,auto){let n=0,rec=null,txt='',busy=false;const mic=srOK;
     ui.body.innerHTML=`<div class="card prompt"><div class="sent" id="rEn">${hl(it)}</div><div class="hint" style="font-size:19px;color:var(--ink)">${esc(it.exZh)}</div><div class="rword"><b>${esc(it.en)}</b> ${esc(it.zh)}</div>
       <div class="rdots" id="rd">${'<span></span>'.repeat(N)}</div>${N===1?'<div class="hint" style="margin:-6px 0 8px">学过的词，读 1 遍就行</div>':''}</div>
       <div class="speakbox" style="margin-top:12px">
        <div class="row center" style="gap:10px;flex-wrap:nowrap"><button class="btn" id="spk" style="flex:1;font-size:18px;padding:14px 8px">🔊 听英文</button><button class="btn" id="spkz" style="flex:1;font-size:18px;padding:14px 8px">🔊 听中文</button></div>
        ${mic?'<button class="mic hold" id="rMic" type="button" style="margin-top:10px">🎤 点一下，读给我听</button>':''}
-       <div class="row center" style="margin-top:10px"><button class="btn go" id="rDid" type="button" style="font-size:18px;padding:12px 22px">✓ 我读完了</button></div>
-       <p class="hint center" id="rTip" style="margin:8px 0 0">先听系统读，再大声跟读：<b>先读英文，再读中文</b>。${mic?'可以点麦克风读，也可以读完直接点「我读完了」。':'读完点「我读完了」。'}</p>
+       ${mic?'':'<div class="row center" style="margin-top:10px"><button class="btn go" id="rDid" type="button" style="font-size:18px;padding:12px 22px">✓ 我读完了</button></div>'}
+       <p class="hint center" id="rTip" style="margin:8px 0 0">先听系统读，再大声跟读：<b>先读英文，再读中文</b>。${mic?'点麦克风读给我听。':'读完点「我读完了」。'}</p>
        <div id="rFb" class="sayfb" hidden></div></div>`;
     ui.body.querySelectorAll('#rEn .tw').forEach(el=>el.onclick=()=>tapWord(el,el.dataset.tw,it.ex));
     const fb=$('#rFb'),spk=$('#spk');
     const glow=on=>{spk.classList.toggle('go',on);spk.textContent=on?`🔊 听第 ${n+1} 遍`:'🔊 听英文'};
     const play=()=>{if(rec)return;glow(false);const e=$('#rEn');e.classList.add('rnow');say(it.ex,'en');setTimeout(()=>{const x=$('#rEn');if(x)x.classList.remove('rnow')},1500+it.ex.split(' ').length*600)};
     spk.onclick=play;$('#spkz').onclick=()=>{if(!rec)say(it.exZh,'zh')};
-    const lab=()=>{$('#rDid').textContent=N>1?`✓ 我读完第 ${n+1} 遍`:'✓ 我读完了'};lab();
+    const lab=()=>{};
     const count=fromTap=>{n++;$('#rd').children[n-1].classList.add('on');beep('ok');
       if(n>=N){good(ctx,$('#rd'));i++;if(fromTap)q(true);else setTimeout(()=>q(false),900);return}
       lab();if(fromTap)play();else glow(true)};
-    $('#rDid').onclick=()=>{if(rec){const r=rec;rec=null;try{r.abort()}catch(_){}resetMic()}fb.hidden=true;count(true)};
+    if($('#rDid'))$('#rDid').onclick=()=>{if(rec){const r=rec;rec=null;try{r.abort()}catch(_){}resetMic()}fb.hidden=true;count(true)};
     const resetMic=()=>{const m=$('#rMic');if(m){m.classList.remove('on');m.textContent='🎤 点一下，读给我听'}};
     if(mic)$('#rMic').onclick=e=>{e.preventDefault();const m=$('#rMic');
       if(rec){const r=rec;m.textContent='好的…';try{r.stop()}catch(_){}setTimeout(()=>r._finish&&r._finish(),2500);return}
@@ -879,13 +879,13 @@ function readPass(ctx,list){return new Promise(res=>{
           if(!txt.trim()){fb.className='sayfb no';fb.innerHTML='没听到声音，<b>靠近一点、大声一点</b>再读一次';return}
           fb.className='sayfb ok';fb.innerHTML=['✓ 读得好！','✓ 很棒，声音很响亮！','✓ 读完啦！'][Math.random()*3|0]+(n+1<N?'<br><small>点「🔊 听第 '+(n+2)+' 遍」继续</small>':'');count(false)},true,'en-US');
       if(!rec){resetMic();m.hidden=true}};
-    play()}
+    if(auto)play();else glow(true)}
   function q(fromTap){
     if(!alive(ctx))return;if(i>=list.length)return res(new Set());ui.prog(i/list.length);
-    if(true){if(fromTap)return simple(list[i],reps(list[i]));
+    if(true){if(fromTap||i>0)return simple(list[i],reps(list[i]),!!fromTap);
       /* 第一句：先放一个「开始」按钮，点了再出声 */
       ui.body.innerHTML=`<div class="card result stack"><div class="ptitle">跟读 · ${list.length} 个句子</div><p>每句系统先读一遍，你再大声跟读：先读英文，再读中文。</p><div class="row center"><button class="btn go" id="rStart" style="font-size:19px;padding:14px 26px">▶ 开始跟读</button></div></div>`;
-      $('#rStart').onclick=()=>simple(list[i],reps(list[i]));return}
+      $('#rStart').onclick=()=>simple(list[i],reps(list[i]),true);return}
     const it=list[i],N=reps(it),useMic=S.readScore===true&&srOK;let n=0,rec=null,done=false,txt='',alts=[],stopT=0,running=false,tok=0;
     ui.body.innerHTML=`<div class="card prompt"><div class="sent" id="rEn">${hl(it)}</div><div class="hint" style="font-size:19px;color:var(--ink)">${esc(it.exZh)}</div><div class="rword"><b>${esc(it.en)}</b> ${esc(it.zh)}</div>
       <div class="rdots" id="rd">${'<span></span>'.repeat(N)}</div>${N===1?'<div class="hint" style="margin:-6px 0 8px">学过的词，读 1 遍就行</div>':''}
