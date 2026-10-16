@@ -118,6 +118,8 @@ select{font:inherit;font-weight:700;padding:8px 12px;border-radius:12px;border:2
 .bad{animation:shake .4s}
 
 .garea.shake{animation:shake .4s}
+.mcore{animation:mglow 1.2s ease-in-out infinite}@keyframes mglow{50%{opacity:.45}}
+.mflame{transform-box:fill-box;transform-origin:top;animation:mflick .18s ease-in-out infinite alternate}@keyframes mflick{to{transform:scaleY(.7)}}
 @keyframes shake{20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
 
 .slotline{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;min-height:62px;padding:12px;border-radius:18px;border:2px dashed var(--line);background:var(--surface2)}
@@ -855,18 +857,22 @@ function readPass(ctx,list){return new Promise(res=>{
       <div id="rFb" class="sayfb" hidden></div></div>`;
     ui.body.querySelectorAll('#rEn .tw').forEach(el=>el.onclick=()=>tapWord(el,el.dataset.tw,it.ex));
     const go=$('#rGo'),did=$('#rDid'),fb=$('#rFb'),tip=$('#rTip');
-    $('#spk').onclick=()=>say(it.ex);$('#spkz').onclick=()=>say(it.exZh,'zh');
+    $('#spk').onclick=()=>{if(rec)return;say(it.ex)};$('#spkz').onclick=()=>{if(rec)return;say(it.exZh,'zh')};
     const best=()=>(alts.length?alts:[txt]).map(c=>enWordsHit(c,it.ex)).sort((a,b)=>b.score-a.score)[0];
     const paint=r=>{const toks=it.ex.split(/\s+/);let k=0;$('#rEn').innerHTML=toks.map(t=>{const has=/[A-Za-z0-9]/.test(t);const ok=has?r.hit[k++]:true;return `<span class="${has&&ok&&txt?'rhit':''}">${esc(t)}</span>`}).join(' ')};
     const dot=()=>{if(done||n>=N)return true;n++;$('#rd').children[n-1].classList.add('on');beep('ok');
       if(n>=N){done=true;running=false;go.disabled=true;did.hidden=true;good(ctx,$('#rd'));fb.hidden=false;fb.className='sayfb ok';fb.innerHTML=['✓ 读得好！','✓ 很棒，声音很响亮！','✓ 读完啦！'][Math.random()*3|0];i++;setTimeout(q,1300);return true}return false};
     const idle=lab=>{running=false;go.disabled=false;go.classList.remove('on');go.textContent=lab||`▶ 继续：听第 ${n+1} 遍`;did.hidden=true};
     /* 一遍：系统读 → 跟读 */
+    /* 系统读完后进入跟读。为了不卡住：除了「读完」回调，还按句子长度算一个最长等待时间，到点就自动往下走；听的时候也可以点按钮跳过 */
+    let hearing=0,proceed=null;
     const round=()=>{if(done||!alive(ctx))return;running=true;const my=++tok;fb.hidden=true;$('#rEn').innerHTML=hl(it);$('#rEn').classList.add('rnow');
-      go.disabled=true;go.classList.remove('on');go.textContent=`🔊 听第 ${n+1} 遍…`;tip.innerHTML='认真听，马上跟着读';did.hidden=true;
-      say(it.ex,'en',()=>{if(my!==tok||!alive(ctx))return;$('#rEn').classList.remove('rnow');
+      go.disabled=false;go.classList.remove('on');go.textContent=`🔊 听第 ${n+1} 遍…（点这里跳过）`;tip.innerHTML='认真听，马上跟着读';did.hidden=true;hearing=my;
+      let went=false;proceed=()=>{if(went||my!==tok||!alive(ctx)||done)return;went=true;hearing=0;clearTimeout(cap);$('#rEn').classList.remove('rnow');
         tip.innerHTML='轮到你了：<b>先读英文，再读中文</b>';beep('pop');
-        if(useMic)listenNow(my);else{go.textContent='🗣️ 大声跟读…';did.hidden=false}})};
+        if(useMic)setTimeout(()=>{if(my===tok&&!done)listenNow(my)},250);else{go.textContent='🗣️ 大声跟读…';did.hidden=false}};
+      const est=1800+it.ex.split(/\s+/).length*(voiceCfg().slow?700:560);const cap=setTimeout(proceed,est+2500);
+      say(it.ex,'en',proceed)};
     const listenNow=my=>{txt='';alts=[];go.classList.add('on');go.disabled=false;go.textContent='● 正在听你读… 读完停一下';did.hidden=false;
       rec=listen(t=>{txt=t;alts=ALTS.slice();const r=best();paint(r);if(r.score>=.95){clearTimeout(stopT);stopT=setTimeout(()=>stopRec(),2800)}},(got,denied)=>{rec=null;clearTimeout(stopT);if(my!==tok)return;go.classList.remove('on');
         if(denied){go.textContent='🗣️ 大声跟读…';did.hidden=false;return} // 不能自动开麦：读完点按钮
@@ -874,7 +880,7 @@ function readPass(ctx,list){return new Promise(res=>{
         $('#rEn').innerHTML=hl(it);if(!dot())setTimeout(()=>{if(my===tok&&!done)round()},900)},true,'en-US',true);
       if(!rec){go.textContent='🗣️ 大声跟读…';did.hidden=false}};
     const stopRec=()=>{const r=rec;if(!r)return;go.textContent='好的…';try{r.stop()}catch(_){}setTimeout(()=>r._finish&&r._finish(),2500)};
-    go.onclick=e=>{e.preventDefault();if(done)return;if(rec){stopRec();return}if(!running)round()};
+    go.onclick=e=>{e.preventDefault();if(done)return;if(hearing&&proceed){hush();proceed();return}if(rec){stopRec();return}if(!running)round()};
     did.onclick=()=>{tok++;if(rec){const r=rec;rec=null;try{r.abort()}catch(_){}}go.classList.remove('on');$('#rEn').innerHTML=hl(it);if(!dot())setTimeout(()=>{if(!done)round()},600)};
   }
   q();
@@ -1899,13 +1905,27 @@ const ITEMS=[
  {id:'straw',slot:'hat',ic:'👒',name:'草帽',price:10},{id:'wizard',slot:'hat',ic:'🧙',name:'魔法帽',price:15},
  {id:'gradcap',slot:'hat',ic:'🎓',name:'学士帽',badge:'master50'},
  {id:'roundg',slot:'face',ic:'👓',name:'圆眼镜',price:6},{id:'sung',slot:'face',ic:'🕶️',name:'墨镜',price:10},
+ {id:'heartg',slot:'face',ic:'💗',name:'爱心眼镜',price:8},{id:'starg',slot:'face',ic:'⭐',name:'星星眼镜',price:8},
+ {id:'nerdg',slot:'face',ic:'🤓',name:'粗框眼镜',price:6},{id:'g3d',slot:'face',ic:'🎬',name:'3D 眼镜',price:10},
+ {id:'goggle',slot:'face',ic:'🤿',name:'潜水镜',price:12},{id:'monocle',slot:'face',ic:'🧐',name:'单片眼镜',price:12},
+ {id:'vr',slot:'face',ic:'🥽',name:'VR 眼镜',price:15,lv:4},
+ {id:'redscarf',slot:'neck',ic:'🧣',name:'红领巾',price:6},{id:'bowtie',slot:'neck',ic:'🎩',name:'小领结',price:6},
+ {id:'bell',slot:'neck',ic:'🔔',name:'小铃铛',price:8},{id:'pearl',slot:'neck',ic:'📿',name:'珍珠项链',price:10},
+ {id:'headset',slot:'neck',ic:'🎧',name:'大耳机',price:12},{id:'medal',slot:'neck',ic:'🏅',name:'金牌',price:15,lv:3},
+ {id:'skin_gold',slot:'skin',ic:'🟡',name:'金色皮肤',price:20,lv:2},{id:'skin_pink',slot:'skin',ic:'🍬',name:'糖果皮肤',price:20,lv:2},
+ {id:'skin_camo',slot:'skin',ic:'🪖',name:'迷彩皮肤',price:25,lv:3},{id:'skin_zebra',slot:'skin',ic:'🦓',name:'斑马皮肤',price:25,lv:3},
+ {id:'skin_lava',slot:'skin',ic:'🌋',name:'熔岩皮肤',price:30,lv:4},{id:'skin_metal',slot:'skin',ic:'⚙️',name:'金属皮肤',price:30,lv:4},
+ {id:'skin_galaxy',slot:'skin',ic:'🌌',name:'星空皮肤',price:40,lv:6},
+ {id:'mech_blue',slot:'mech',ic:'🤖',name:'蓝色战斗机甲',price:30,lv:3},{id:'mech_red',slot:'mech',ic:'🔥',name:'火焰机甲',price:40,lv:5},
+ {id:'mech_yellow',slot:'mech',ic:'⚡',name:'闪电机甲',price:50,lv:7},{id:'mech_star',slot:'mech',ic:'🚀',name:'星际机甲',price:60,lv:9},
  {id:'bag',slot:'back',ic:'🎒',name:'小书包',price:12},{id:'cape',slot:'back',ic:'🦸',name:'红披风',price:15},
  {id:'rainbow',slot:'back',ic:'🌈',name:'彩虹披风',badge:'streak7'},
+ {id:'angel',slot:'back',ic:'🪽',name:'天使翅膀',price:18,lv:3},
  {id:'plant',slot:'room',ic:'🪴',name:'小盆栽',price:6},{id:'rug',slot:'room',ic:'🟠',name:'圆地毯',price:8},
  {id:'window',slot:'room',ic:'🪟',name:'窗户',price:10},{id:'lights',slot:'room',ic:'✨',name:'星星灯',price:10},
  {id:'shelf',slot:'room',ic:'📚',name:'书架',price:12},{id:'bed',slot:'room',ic:'🛏️',name:'小床',price:15},
  {id:'trophy',slot:'room',ic:'🏆',name:'金奖杯',badge:'perfect'}];
-const SLOTS=[['hat','帽子'],['face','眼镜'],['back','背饰'],['room','小屋']];
+const SLOTS=[['mech','机甲'],['skin','皮肤'],['hat','帽子'],['face','眼镜'],['neck','配饰'],['back','背饰'],['room','小屋']];
 const CAPE=`M44 92 Q100 64 156 92 L176 178 Q100 196 24 178 Z`;
 const WEAR={
  cap:`<path fill="#E8483A" d="M64 64 Q100 16 136 64 Z"/><rect x="104" y="58" width="50" height="9" rx="4.5" fill="#B9301F"/><circle cx="100" cy="30" r="5" fill="#B9301F"/>`,
@@ -1918,6 +1938,45 @@ const WEAR={
  bag:`<path d="M76 66 Q70 112 82 152" stroke="#2F7FB8" stroke-width="7" fill="none"/><rect x="146" y="104" width="30" height="44" rx="9" fill="#3E9FE0"/><rect x="150" y="116" width="22" height="12" rx="4" fill="#2F7FB8"/>`,
  cape:`<path fill="#D23B2E" d="${CAPE}"/>`,
  rainbow:`<path fill="#FF6B6B" d="${CAPE}"/><path fill="#FFC93C" d="M52 110 Q100 90 148 110 L164 178 Q100 192 36 178 Z"/><path fill="#5CCB86" d="M60 128 Q100 112 140 128 L152 178 Q100 188 48 178 Z"/><path fill="#5DADEC" d="M68 146 Q100 134 132 146 L140 178 Q100 184 60 178 Z"/>`};
+const HEART=x=>`<path transform="translate(${x-78} 0)" d="M78 110 C58 98 62 80 78 89 C94 80 98 98 78 110 Z"/>`;
+const STAR=(x,y,r)=>{let d='';for(let k=0;k<10;k++){const a=Math.PI/5*k-Math.PI/2,rr=k%2?r*.48:r;d+=(k?'L':'M')+(x+rr*Math.cos(a)).toFixed(1)+' '+(y+rr*Math.sin(a)).toFixed(1)}return d+'Z'};
+Object.assign(WEAR,{
+ heartg:`<g fill="#FF6FA5" fill-opacity=".85" stroke="#D63C7A" stroke-width="3">${HEART(78)}${HEART(122)}</g><path d="M92 94 L108 94" stroke="#D63C7A" stroke-width="4"/>`,
+ starg:`<g fill="#FFD257" fill-opacity=".9" stroke="#E0A21B" stroke-width="3"><path d="${STAR(78,96,19)}"/><path d="${STAR(122,96,19)}"/></g><path d="M94 96 L106 96" stroke="#E0A21B" stroke-width="4"/>`,
+ nerdg:`<g fill="#fff" fill-opacity=".2" stroke="#1E1E28" stroke-width="6"><rect x="60" y="83" width="34" height="27" rx="5"/><rect x="106" y="83" width="34" height="27" rx="5"/></g><path d="M94 94 L106 94" stroke="#1E1E28" stroke-width="6"/>`,
+ g3d:`<rect x="56" y="82" width="88" height="30" rx="6" fill="#fff"/><rect x="62" y="87" width="32" height="20" rx="3" fill="#FF4D4D" fill-opacity=".8"/><rect x="106" y="87" width="32" height="20" rx="3" fill="#3EA2FF" fill-opacity=".8"/>`,
+ goggle:`<path d="M38 94 Q100 78 162 94" stroke="#2B7BB9" stroke-width="6" fill="none"/><g fill="#BFE9FF" fill-opacity=".55" stroke="#2B7BB9" stroke-width="7"><circle cx="78" cy="97" r="16"/><circle cx="122" cy="97" r="16"/></g>`,
+ monocle:`<circle cx="122" cy="96" r="16" fill="#fff" fill-opacity=".25" stroke="#C9951A" stroke-width="4"/><path d="M134 108 Q142 130 128 150" stroke="#C9951A" stroke-width="2" fill="none"/>`,
+ vr:`<path d="M40 96 L56 96 M144 96 L160 96" stroke="#2B2B3A" stroke-width="7"/><rect x="54" y="78" width="92" height="36" rx="12" fill="#2B2B3A"/><rect x="62" y="86" width="76" height="20" rx="8" fill="#3EC5FF" opacity=".85"/><path d="M68 92 L84 92" stroke="#fff" stroke-width="3" opacity=".7"/>`,
+ redscarf:`<path fill="#E8302A" d="M58 142 Q100 160 142 142 L140 153 Q100 170 60 153 Z"/><path fill="#E8302A" d="M96 158 L82 190 L100 176 Z M104 158 L118 190 L100 176 Z"/><circle cx="100" cy="160" r="6" fill="#C21F1A"/>`,
+ bowtie:`<path fill="#2B2B3A" d="M100 150 L78 138 L78 162 Z M100 150 L122 138 L122 162 Z"/><circle cx="100" cy="150" r="6" fill="#E8483A"/>`,
+ bell:`<path d="M60 144 Q100 160 140 144" stroke="#E8483A" stroke-width="8" fill="none"/><circle cx="100" cy="162" r="10" fill="#FFD257" stroke="#C9951A" stroke-width="3"/><path d="M93 164 L107 164" stroke="#C9951A" stroke-width="2"/>`,
+ pearl:`<g fill="#FFFFFF" stroke="#D9D4E8" stroke-width="2">${[[62,142],[72,149],[83,154],[94,157],[106,157],[117,154],[128,149],[138,142]].map(([x,y])=>`<circle cx="${x}" cy="${y}" r="6"/>`).join('')}</g><circle cx="100" cy="166" r="7" fill="#FF9EC4" stroke="#E0709B" stroke-width="2"/>`,
+ headset:`<path d="M40 100 Q40 28 100 28 Q160 28 160 100" stroke="#2B2B3A" stroke-width="8" fill="none"/><rect x="28" y="86" width="22" height="34" rx="10" fill="#FF6450"/><rect x="150" y="86" width="22" height="34" rx="10" fill="#FF6450"/>`,
+ medal:`<path d="M82 140 L100 164 L118 140" stroke="#3E9FE0" stroke-width="7" fill="none"/><circle cx="100" cy="170" r="12" fill="#F5C542" stroke="#C9951A" stroke-width="3"/><path fill="#fff" d="${STAR(100,170,7)}"/>`,
+ angel:`<g fill="#FFFFFF" stroke="#D5DCE8" stroke-width="3"><path d="M54 110 Q8 86 14 130 Q26 120 30 140 Q40 128 56 134 Z"/><path d="M146 110 Q192 86 186 130 Q174 120 170 140 Q160 128 144 134 Z"/></g>`});
+/* 皮肤：换身体颜色，有的带花纹 */
+const SKINS={skin_gold:{body:'#F5C542',belly:'#FFF1B8',stroke:'#C9951A'},skin_pink:{body:'#FF8FC7',belly:'#FFE3F1',pat:'dots'},
+  skin_camo:{body:'#6E8B4E',belly:'#D9E4C5',pat:'camo'},skin_zebra:{body:'#FFFFFF',belly:'#F2F2F2',stroke:'#333',pat:'stripes'},
+  skin_lava:{body:'#D9412F',belly:'#FFD0A8',pat:'lava'},skin_metal:{body:'#AEB9C8',belly:'#E9EEF5',stroke:'#7D8A9C',pat:'bolts'},skin_galaxy:{body:'#33287A',belly:'#C9C2FF',pat:'stars'}};
+function skinPat(p){if(p==='dots')return [[70,80],[130,76],[60,130],[146,124],[100,60],[84,170],[124,168]].map(([x,y])=>`<circle cx="${x}" cy="${y}" r="7" fill="#fff" opacity=".7"/>`).join('');
+  if(p==='camo')return [[64,84,16,'#4E6B36'],[132,76,18,'#8FA968'],[150,130,15,'#4E6B36'],[56,140,17,'#8FA968'],[104,58,13,'#3F5A2B'],[120,176,16,'#4E6B36'],[80,174,12,'#8FA968']].map(([x,y,r,c])=>`<ellipse cx="${x}" cy="${y}" rx="${r}" ry="${r*.7}" fill="${c}" transform="rotate(${x%40} ${x} ${y})"/>`).join('');
+  if(p==='stripes')return [50,74,98,122,146].map(y=>`<path d="M30 ${y} Q60 ${y-10} 80 ${y+4} M120 ${y+4} Q140 ${y-10} 170 ${y}" stroke="#222" stroke-width="7" fill="none" stroke-linecap="round"/>`).join('');
+  if(p==='lava')return `<path d="M40 90 Q60 100 52 120 M150 84 Q136 104 152 126 M70 170 Q90 160 96 180 M120 60 Q110 72 126 80" stroke="#FFB020" stroke-width="5" fill="none" stroke-linecap="round"/>`;
+  if(p==='bolts')return `<path d="M44 112 H156" stroke="#7D8A9C" stroke-width="3"/>${[[56,90],[144,90],[56,136],[144,136]].map(([x,y])=>`<circle cx="${x}" cy="${y}" r="4" fill="#7D8A9C"/>`).join('')}`;
+  if(p==='stars')return [[66,72,5],[136,66,6],[150,120,4],[54,132,5],[118,176,5],[86,164,3],[100,52,4],[160,96,3]].map(([x,y,r])=>`<path d="${STAR(x,y,r)}" fill="#FFF6B0"/>`).join('');return ''}
+/* 机甲：喷气背包、肩甲、胸甲（核心会发光）、手臂炮、靴子、头盔面罩和天线 */
+const MECH={mech_blue:['#4A7BD8','#2C4F9E','#6FF2FF'],mech_red:['#E8533F','#9E2C20','#FFD24A'],mech_yellow:['#F2C230','#9E7A12','#7CF2FF'],mech_star:['#A7B2C9','#5B4B9E','#FF7CF2']};
+function mechSVG(id,part,hasHat){const c=MECH[id];if(!c)return '';const [m,d,k]=c;
+  if(part==='back')return `<rect x="34" y="92" width="24" height="58" rx="9" fill="${d}"/><rect x="142" y="92" width="24" height="58" rx="9" fill="${d}"/>
+    <path class="mflame" d="M38 150 Q46 182 54 150 Z" fill="#FFB020"/><path class="mflame" d="M146 150 Q154 182 162 150 Z" fill="#FFB020"/><path class="mflame" d="M42 150 Q46 168 50 150 Z" fill="#FFF3A0"/><path class="mflame" d="M150 150 Q154 168 158 150 Z" fill="#FFF3A0"/>`;
+  if(part==='body')return `<path d="M30 112 Q36 82 70 86 L64 122 Z" fill="${m}" stroke="${d}" stroke-width="3"/><path d="M170 112 Q164 82 130 86 L136 122 Z" fill="${m}" stroke="${d}" stroke-width="3"/>
+    <rect x="18" y="118" width="20" height="34" rx="7" fill="${d}"/><circle cx="28" cy="152" r="5" fill="${k}"/><rect x="162" y="118" width="20" height="34" rx="7" fill="${d}"/><circle cx="172" cy="152" r="5" fill="${k}"/>
+    <path d="M66 134 Q100 124 134 134 L128 168 Q100 178 72 168 Z" fill="${m}" stroke="${d}" stroke-width="3"/><path d="M76 140 Q100 133 124 140" stroke="#fff" stroke-width="3" opacity=".45" fill="none"/>
+    <circle class="mcore" cx="100" cy="153" r="10" fill="${k}" stroke="#fff" stroke-width="3"/>
+    <rect x="62" y="168" width="30" height="16" rx="6" fill="${d}"/><rect x="108" y="168" width="30" height="16" rx="6" fill="${d}"/>`;
+  if(part==='visor')return `<path d="M54 84 Q100 72 146 84 L142 110 Q100 118 58 110 Z" fill="${k}" fill-opacity=".3" stroke="${d}" stroke-width="4"/><path d="M64 88 L84 85" stroke="#fff" stroke-width="3" opacity=".7"/>`;
+  if(part==='head')return hasHat?'':`<path d="M46 82 Q100 26 154 82" fill="none" stroke="${m}" stroke-width="9" stroke-linecap="round"/><path d="M100 50 L100 26" stroke="${d}" stroke-width="4"/><circle class="mcore" cx="100" cy="23" r="6" fill="${k}"/>`;return ''}
 const ROOM={
  window:`<rect x="26" y="26" width="88" height="72" rx="6" fill="#BFE6FF" stroke="#9A7650" stroke-width="6"/><path d="M70 26 V98 M26 62 H114" stroke="#9A7650" stroke-width="4"/><circle cx="96" cy="42" r="8" fill="#FFD257"/><path d="M34 90 Q48 78 62 90 Z" fill="#fff"/>`,
  shelf:`<rect x="300" y="44" width="78" height="112" rx="4" fill="#B7895A"/><rect x="306" y="50" width="66" height="46" fill="#8C6440"/><rect x="306" y="102" width="66" height="48" fill="#8C6440"/><rect x="310" y="60" width="9" height="36" fill="#FF6450"/><rect x="321" y="56" width="8" height="40" fill="#3E9FE0"/><rect x="331" y="64" width="10" height="32" fill="#FFC52E"/><rect x="343" y="58" width="8" height="38" fill="#38A865"/><rect x="312" y="114" width="10" height="36" fill="#9B7BD8"/><rect x="324" y="110" width="9" height="40" fill="#FF7FB0"/><circle cx="356" cy="138" r="11" fill="#4AA8E8"/>`,
@@ -1944,20 +2003,21 @@ function petInner(o){ // 宠物画在 0..200 坐标里
     return `<ellipse class="p-shadow" cx="100" cy="186" rx="50" ry="8"/><g class="bob" ${o.id?'id="petG"':''}><ellipse class="p-egg" cx="100" cy="112" rx="56" ry="70"/>
       ${[[78,80,10],[122,132,13],[128,78,6],[76,146,7]].map(([x,y,r])=>`<circle cx="${x}" cy="${y}" r="${r}" fill="${sp.body}" opacity=".75"/>`).join('')}${crack}</g>`;
   }
-  const sc=[0,.74,.9,1.04][st],bs=`fill:${sp.body}${sp.stroke?';stroke:'+sp.stroke+';stroke-width:3':''}`;
+  const sk=eq.skin&&SKINS[eq.skin];const spc=sk?{...sp,...sk}:sp;const mech=eq.mech&&MECH[eq.mech]?eq.mech:'';
+  const sc=[0,.74,.9,1.04][st],bs=`fill:${spc.body}${spc.stroke?';stroke:'+spc.stroke+';stroke-width:3':''}`;
   const mouth=m==='happy'?'M86 118 Q100 132 114 118':m==='ok'?'M88 122 L112 122':m==='sleep'?'M96 122 Q100 126 104 122':'M88 126 Q100 116 112 126';
   const ears=st>=2?`<path style="${bs}" d="M58 70 Q48 30 80 52 Z"/><path style="${bs}" d="M142 70 Q152 30 120 52 Z"/>`:'';
-  const head=eq.hat&&WEAR[eq.hat]?WEAR[eq.hat]:(o.lvl>=GRAD_LV-1?`<path class="p-crown" d="M74 46 L80 22 L92 38 L100 16 L108 38 L120 22 L126 46 Z"/>`:ORN[sp.id]);
-  const scarf=st>=3&&eq.back!=='bag'?`<path class="p-scarf" d="M56 140 Q100 158 144 140 L144 150 Q100 168 56 150 Z"/>`:'';
+  const head=eq.hat&&WEAR[eq.hat]?WEAR[eq.hat]:mech?mechSVG(mech,'head',false):(o.lvl>=GRAD_LV-1?`<path class="p-crown" d="M74 46 L80 22 L92 38 L100 16 L108 38 L120 22 L126 46 Z"/>`:ORN[sp.id]);
+  const scarf=st>=3&&eq.back!=='bag'&&!eq.neck&&!mech?`<path class="p-scarf" d="M56 140 Q100 158 144 140 L144 150 Q100 168 56 150 Z"/>`:'';
   const eyes=m==='sad'?`<path class="p-mouth" d="M70 96 q8 -6 16 0"/><path class="p-mouth" d="M114 96 q8 -6 16 0"/>`:m==='sleep'?`<path class="p-mouth" d="M70 94 q8 6 16 0"/><path class="p-mouth" d="M114 94 q8 6 16 0"/>`:
     `<g class="eyes"><circle class="p-eye" cx="78" cy="96" r="9"/><circle class="p-eye" cx="122" cy="96" r="9"/><circle class="p-shine" cx="81" cy="92" r="3"/><circle class="p-shine" cx="125" cy="92" r="3"/></g>`;
-  const back=eq.back==='cape'||eq.back==='rainbow'?WEAR[eq.back]:'';
+  const back=(eq.back==='cape'||eq.back==='rainbow'||eq.back==='angel'?WEAR[eq.back]:'')+(mech?mechSVG(mech,'back'):'');
   return `<ellipse class="p-shadow" cx="100" cy="186" rx="${56*sc}" ry="8"/>
     <g class="bob" ${o.id?'id="petG"':''}><g transform="translate(100 182) scale(${sc}) translate(-100 -182)">
-    ${back}${ears}<ellipse style="${bs}" cx="100" cy="112" rx="64" ry="66"/><ellipse style="fill:${sp.belly}" cx="100" cy="134" rx="38" ry="34"/>
+    ${back}${ears}<ellipse style="${bs}" cx="100" cy="112" rx="64" ry="66"/>${sk&&sk.pat?`<clipPath id="pclip${o.id?'m':''}"><ellipse cx="100" cy="112" rx="64" ry="66"/></clipPath><g clip-path="url(#pclip${o.id?'m':''})">${skinPat(sk.pat)}</g>`:''}<ellipse style="fill:${spc.belly}" cx="100" cy="134" rx="38" ry="34"/>
     <ellipse style="${bs}" cx="70" cy="178" rx="16" ry="8"/><ellipse style="${bs}" cx="130" cy="178" rx="16" ry="8"/>
     ${eyes}<circle class="p-cheek" cx="64" cy="114" r="9"/><circle class="p-cheek" cx="136" cy="114" r="9"/>
-    <path class="p-mouth" d="${mouth}"/>${scarf}${eq.face?WEAR[eq.face]:''}${eq.back==='bag'?WEAR.bag:''}${head}</g>${m==='sleep'?'<g class="zzz"><text x="150" y="60">z</text><text x="166" y="40">z</text><text x="182" y="20">Z</text></g>':''}</g>`;
+    <path class="p-mouth" d="${mouth}"/>${scarf}${eq.neck&&WEAR[eq.neck]&&eq.neck!=='headset'?WEAR[eq.neck]:''}${mech?mechSVG(mech,'body'):''}${eq.face?WEAR[eq.face]:''}${mech?mechSVG(mech,'visor'):''}${eq.back==='bag'?WEAR.bag:''}${head}${eq.neck==='headset'?WEAR.headset:''}</g>${m==='sleep'?'<g class="zzz"><text x="150" y="60">z</text><text x="166" y="40">z</text><text x="182" y="20">Z</text></g>':''}</g>`;
 }
 function sceneSVG(){
   const on=id=>S.owned.includes(id)&&!S.roomOff.includes(id);
@@ -2105,7 +2165,7 @@ function shopHTML(){
   const egg=stage()===0;
   return (egg?'<p class="hint" style="margin:0 0 8px">衣服可以先买好，孵出来就能穿上。</p>':'')+SLOTS.map(([slot,label])=>`<div class="secl">${label}</div>
     <div class="shop">${ITEMS.filter(i=>i.slot===slot).map(it=>{const own=S.owned.includes(it.id);let act;
-      if(!own)act=it.badge?`<span class="tag2">🔒 ${BADGES.find(b=>b.id===it.badge).name}徽章</span>`:`<button class="btn small sun" data-buy="${it.id}" ${S.food<it.price?'disabled':''}>🍎 ${it.price}</button>`;
+      if(!own)act=it.badge?`<span class="tag2">🔒 ${BADGES.find(b=>b.id===it.badge).name}徽章</span>`:it.lv&&level()<it.lv?`<span class="tag2">🔒 Lv.${it.lv} 解锁 · 🍎${it.price}</span>`:`<button class="btn small sun" data-buy="${it.id}" ${S.food<it.price?'disabled':''}>🍎 ${it.price}</button>`;
       else if(slot==='room')act=`<button class="btn small" data-room="${it.id}">${S.roomOff.includes(it.id)?'摆出来':'收起来'}</button>`;
       else act=`<button class="btn small ${S.equip[slot]===it.id?'':'go'}" data-wear="${it.id}">${S.equip[slot]===it.id?'脱下':'穿上'}</button>`;
       return `<div class="sitem ${own?'own':''}"><span class="ic">${it.ic}</span><b>${it.name}</b>${act}</div>`}).join('')}</div>`).join('');
@@ -2245,9 +2305,9 @@ function graduate(){
 }
 function petClick(e){
   const pt=e.target.closest('[data-ptab]');if(pt){petTab=pt.dataset.ptab;renderPet();return true}
-  const b=e.target.closest('[data-buy]');if(b){const it=ITEMS.find(i=>i.id===b.dataset.buy);if(S.food<it.price)return true;
+  const b=e.target.closest('[data-buy]');if(b){const it=ITEMS.find(i=>i.id===b.dataset.buy);if(S.food<it.price||(it.lv&&level()<it.lv))return true;
     S.food-=it.price;S.owned.push(it.id);if(it.slot!=='room'&&stage()>0)S.equip[it.slot]=it.id;S.pet.joy=Math.min(100,(S.pet.joy??60)+15);save();hud();beep('win');
-    bubbleText=(it.slot==='room'?'哇，新家具！谢谢你！':'我穿上新'+it.name+'啦，好看吗？')+'（心情 +15）';renderPet();setTimeout(()=>petFx('💖',3),50);return true}
+    bubbleText=(it.slot==='room'?'哇，新家具！谢谢你！':it.slot==='mech'?'机甲启动！'+it.name+'，出发！':it.slot==='skin'?'我换上'+it.name+'啦，帅不帅？':'我穿上新'+it.name+'啦，好看吗？')+'（心情 +15）';renderPet();setTimeout(()=>petFx('💖',3),50);return true}
   const w=e.target.closest('[data-wear]');if(w){const it=ITEMS.find(i=>i.id===w.dataset.wear);S.equip[it.slot]=S.equip[it.slot]===it.id?null:it.id;save();beep('pop');renderPet();return true}
   const r=e.target.closest('[data-room]');if(r){const id=r.dataset.room;S.roomOff=S.roomOff.includes(id)?S.roomOff.filter(x=>x!==id):S.roomOff.concat(id);save();beep('pop');renderPet();return true}
   return false;
