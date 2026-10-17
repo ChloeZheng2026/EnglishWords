@@ -292,6 +292,7 @@ rt{ruby-align:center}
 @media (max-width:440px){.ghead h2{font-size:18px}.ghead .chip{font-size:12.5px;padding:3px 8px}.ghead .btn.small{padding:6px 9px}}
 .mic.hold{border-radius:999px;padding:22px 16px;font-size:21px;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:none}
 .mic.hold.on{transform:scale(.97)}
+.mic.zh{background:var(--coral,#ff7a59);box-shadow:0 4px 0 #c4553a}
 .rword{display:inline-block;margin-top:8px;padding:4px 12px;border-radius:999px;background:var(--sun-soft,#fff3c4);font-size:17px} .rword b{font-family:var(--f-display);margin-right:4px}
 .rhit{color:var(--leaf,#2e9e5b)} .rmiss{color:#d64532;text-decoration:underline wavy} .rnow{background:var(--sun-soft,#fff3c4);border-radius:8px;padding:2px 6px}
 #zForm .btn,#sayForm .btn{white-space:nowrap;flex:none}
@@ -855,9 +856,9 @@ function readPass(ctx,list){return new Promise(res=>{
       <div class="rdots" id="rd">${'<span></span>'.repeat(N)}</div>${N===1?'<div class="hint" style="margin:-6px 0 8px">学过的词，读 1 遍就行</div>':''}</div>
       <div class="speakbox" style="margin-top:12px">
        <div class="row center" style="gap:10px;flex-wrap:nowrap"><button class="btn" id="spk" style="flex:1;font-size:18px;padding:14px 8px">🔊 听英文</button><button class="btn" id="spkz" style="flex:1;font-size:18px;padding:14px 8px">🔊 听中文</button></div>
-       ${mic?'<button class="mic hold" id="rMic" type="button" style="margin-top:10px">🎤 点一下，读给我听</button>':''}
+       ${mic?'<button class="mic hold" id="rMic" type="button" style="margin-top:10px">🎤 ① 读英文</button>':''}
        ${mic?'':'<div class="row center" style="margin-top:10px"><button class="btn go" id="rDid" type="button" style="font-size:18px;padding:12px 22px">✓ 我读完了</button></div>'}
-       <p class="hint center" id="rTip" style="margin:8px 0 0">先听系统读，再大声跟读：<b>先读英文，再读中文</b>。${mic?'点麦克风读给我听。':'读完点「我读完了」。'}</p>
+       <p class="hint center" id="rTip" style="margin:8px 0 0">先听系统读，再大声跟读：<b>先读英文，再读中文</b>。${mic?'每一遍都要先读英文、再读中文。':'先读英文、再读中文，读完点「我读完了」。'}</p>
        <div id="rFb" class="sayfb" hidden></div></div>`;
     ui.body.querySelectorAll('#rEn .tw').forEach(el=>el.onclick=()=>tapWord(el,el.dataset.tw,it.ex));
     const fb=$('#rFb'),spk=$('#spk');
@@ -869,16 +870,26 @@ function readPass(ctx,list){return new Promise(res=>{
       if(n>=N){good(ctx,$('#rd'));i++;if(fromTap)q(true);else setTimeout(()=>q(false),900);return}
       lab();if(fromTap)play();else glow(true)};
     if($('#rDid'))$('#rDid').onclick=()=>{if(rec){const r=rec;rec=null;try{r.abort()}catch(_){}resetMic()}fb.hidden=true;count(true)};
-    const resetMic=()=>{const m=$('#rMic');if(m){m.classList.remove('on');m.textContent='🎤 点一下，读给我听'}};
-    if(mic)$('#rMic').onclick=e=>{e.preventDefault();const m=$('#rMic');
+    /* 每一遍分两步：① 读英文 ② 读中文，两步都读了才算一遍 */
+    let part='en';
+    const zhEl=()=>ui.body.querySelector('.prompt .hint');
+    const setPart=p=>{part=p;const m=$('#rMic');if(!m)return;m.classList.remove('on');
+      m.textContent=p==='en'?'🎤 ① 读英文':'🎤 ② 读中文';m.classList.toggle('zh',p==='zh');
+      $('#rEn').classList.toggle('rnow',p==='en'&&false);const z=zhEl();if(z)z.classList.toggle('rnow',p==='zh');
+      $('#rTip').innerHTML=p==='en'?'先听系统读，再点麦克风<b>读英文</b>':'很好！现在点麦克风<b>读中文</b>：'+esc(it.exZh)};
+    const resetMic=()=>setPart(part);
+    if(mic){setPart('en');$('#rMic').onclick=e=>{e.preventDefault();const m=$('#rMic');
       if(rec){const r=rec;m.textContent='好的…';try{r.stop()}catch(_){}setTimeout(()=>r._finish&&r._finish(),2500);return}
-      hush();txt='';fb.hidden=true;m.classList.add('on');m.textContent='● 正在听… 读完停一下就好';
-      rec=listen(t=>{txt=t;const r=enWordsHit(t,it.ex);const toks=it.ex.split(/\s+/);let k=0;
+      hush();txt='';fb.hidden=true;m.classList.add('on');m.textContent=part==='en'?'● 正在听你读英文… 读完停一下':'● 正在听你读中文… 读完停一下';const my=part;
+      rec=listen(t=>{txt=t;if(my!=='en')return;const r=enWordsHit(t,it.ex);const toks=it.ex.split(/\s+/);let k=0;
           $('#rEn').innerHTML=toks.map(w=>{const has=/[A-Za-z0-9]/.test(w);const ok=has?r.hit[k++]:true;return `<span class="${has&&ok?'rhit':''}">${esc(w)}</span>`}).join(' ')},
-        ()=>{rec=null;resetMic();$('#rEn').innerHTML=hl(it);fb.hidden=false;
-          if(!txt.trim()){fb.className='sayfb no';fb.innerHTML='没听到声音，<b>靠近一点、大声一点</b>再读一次';return}
-          fb.className='sayfb ok';fb.innerHTML=['✓ 读得好！','✓ 很棒，声音很响亮！','✓ 读完啦！'][Math.random()*3|0]+(n+1<N?'<br><small>点「🔊 听第 '+(n+2)+' 遍」继续</small>':'');count(false)},true,'en-US');
-      if(!rec){resetMic();m.hidden=true}};
+        ()=>{rec=null;$('#rEn').innerHTML=hl(it);fb.hidden=false;
+          const heard=my==='en'?txt.trim().split(/\s+/).filter(Boolean).length>0:(txt.match(/[一-鿿]/g)||[]).length>=2;
+          if(!heard){fb.className='sayfb no';fb.innerHTML=my==='en'?'没听到英文，<b>靠近一点、大声一点</b>再读一次':'没听到中文哦，看着上面的中文<b>大声读一遍</b>';setPart(my);return}
+          if(my==='en'){fb.className='sayfb ok';fb.innerHTML='✓ 英文读好了！接着读中文';beep('pop');setPart('zh');return}
+          fb.className='sayfb ok';fb.innerHTML=['✓ 英文中文都读好了！','✓ 很棒，声音很响亮！','✓ 这一遍读完啦！'][Math.random()*3|0]+(n+1<N?'<br><small>点「🔊 听第 '+(n+2)+' 遍」继续</small>':'');
+          setPart('en');count(false)},true,my==='en'?'en-US':'zh-CN');
+      if(!rec){setPart(part);m.hidden=true}}}
     if(auto)play();else glow(true)}
   function q(fromTap){
     if(!alive(ctx))return;if(i>=list.length)return res(new Set());ui.prog(i/list.length);
@@ -1857,8 +1868,8 @@ function renderToday(){
       ${missed.length?`<div><div class="secl">今天出过错的词（明天继续巩固，直到全对）</div>${chips(missed)}</div>`:'<div>今天一个都没错，太厉害了！</div>'}
       ${d.mastered&&d.mastered.length?`<div><div class="secl">新掌握的单词</div>${chips(d.mastered,'rev')}</div>`:''}
       <p class="hint">明天要复习 ${dueOn(addDays(today(),1))} 个旧单词，再学 ${newQuota()} 个新词。${weakCount()?`（巩固中的词有 ${weakCount()} 个，不会的词最多 ${WEAK_MAX} 个，新词会相应减少）`:''}</p>
-      <div class="row center"><button class="btn go" data-go="pet">去喂${esc(S.pet.name)}</button>${nextNew(1).length&&newQuota()?'<button class="btn" id="extra">再学一组新词（加餐）</button>':''}</div></div></div>`;
-    const ex=$('#extra');if(ex)ex.onclick=()=>{S.day={date:today(),newIds:nextNew(newQuota()),revIds:[],aIds:[],bIds:[],curveIds:[],step:0,missed:{},started:false,done:false,extra:true,patRev:[],patNew:[]};save();renderToday()};
+      <div class="row center"><button class="btn go" data-go="pet">去喂${esc(S.pet.name)}</button>${nextNew(1).length?'<button class="btn sun" id="extra">🍱 再学一组新词（加餐）</button>':''}</div></div></div>`;
+    const ex=$('#extra');if(ex)ex.onclick=()=>{S.day={date:today(),newIds:nextNew(S.newPerDay),revIds:[],aIds:[],bIds:[],curveIds:[],step:0,missed:{},started:false,done:false,extra:true,patRev:[],patNew:[]};save();renderToday()};
     return;
   }
   if(!items.length){
