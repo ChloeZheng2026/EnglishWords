@@ -422,6 +422,8 @@ if(S.stepsV===4){if(S.day&&S.day.step>=7)S.day.step+=1;S.stepsV=5;save()} // 新
 if(!S.phV){const t=today();for(const r of Object.values(S.srs||{})){if(r.mastered||r.ph)continue;const days=r.learned?Math.round((new Date(t)-new Date(r.learned))/864e5):99;
   if(days<=A_DAYS&&(r.st||0)===0){r.ph=Math.min(A_DAYS,1+(r.reviews||0));r.due=r.due<t?t:r.due}else r.ph=9}
   S.phV=1;if(S.day&&!S.day.started&&!S.day.done)S.day=null;save()} // 改成三天消化
+if(!S.lastAct){const h=S.history&&S.history.length?S.history[S.history.length-1].date:'';const sd=S.day&&S.day.started?S.day.date:'';S.lastAct=[h,sd].filter(Boolean).sort().pop()||'';
+  if(S.lastAct&&S.lastAct<addDays(today(),-1)&&S.day&&!S.day.started&&!S.day.done)S.day=null;save()}
 if(S.stepsV===5){if(S.day&&S.day.step>=1&&S.day.step<=8)S.day.step+=1;S.stepsV=6;save()} // 「跟读」挪到最前面
 if(S.stepsV===6){if(S.day&&S.day.step>=1)S.day.step+=1;S.stepsV=7;save()} // 新增「认识新词」
 function migrateV1(){try{const o=JSON.parse(localStorage.getItem('doudou-words-v1'));if(!o)return;
@@ -509,8 +511,16 @@ const lvt=()=>LVTXT[studyLv()];
 const WEAK_MAX=10; // 「不会的词」（巩固中 + 今天的新词）最多 10 个
 const weakCount=()=>Object.values(S.srs).filter(r=>r.weak&&!r.mastered&&!r.moved).length;
 const newQuota=()=>Math.max(0,Math.min(S.newPerDay,WEAK_MAX-weakCount()));
+/* 停练几天后：所有复习时间一起往后顺延，进度从上次停下的地方接着来，不会一下子堆一大堆 */
+function resumeGap(t){const la=S.lastAct;if(!la||la>=t||S.gapDone===t)return;
+  const g=Math.round((Date.parse(t)-Date.parse(la))/864e5)-1;if(g<=0)return;
+  const sh=d=>d?addDays(d,g):d;
+  for(const r of Object.values(S.srs||{}))if(!r.mastered&&r.due)r.due=sh(r.due);
+  for(const r of Object.values(S.pats||{}))if(!r.mastered&&r.due)r.due=sh(r.due);
+  for(const x of Object.values(S.sents||{}))if(x.due)x.due=sh(x.due);
+  S.gapDone=t;S.gapDays=g;save()}
 function buildDay(force){
-  const t=today();if(!force&&S.day&&S.day.date===t)return;
+  const t=today();resumeGap(t);if(!force&&S.day&&S.day.date===t)return;
   /* 之前开始了但没做完：不清空，带到今天接着做 */
   if(!force&&S.day&&!S.day.done&&S.day.started&&S.day.date<t&&dayItems().length){S.day.from=S.day.from||S.day.date;S.day.date=t;save();return}
   const map=wordMap();
@@ -1820,7 +1830,7 @@ function runStep(ctx,step){
 async function runDay(){
   buildDay();const items=dayItems();if(!items.length)return go('today');
   const ctx={tok:++RUN,mode:'day',items,pool:items};
-  S.day.started=true;save();flowShell(ctx);window.scrollTo(0,0);
+  S.day.started=true;S.lastAct=today();save();flowShell(ctx);window.scrollTo(0,0);
   if(S.day.step<=STEPS.findIndex(x=>x.key==='cloze'))genJob(items); // 后台提前编句子
   if(S.day.step===0)tipJob(items.filter(it=>S.day.newIds.includes(it.id))); // 后台想记忆窍门
   const ds=daySets(),cv=ds.B;
@@ -1848,6 +1858,7 @@ function finishDay(ctx){
     else if(r.weak){r.weak=false;r.st=1;r.due=addDays(t,INTERVALS[1])} // 巩固全对：开始按遗忘曲线复习
     else{r.st++;if(r.st>=INTERVALS.length){r.mastered=true;r.masteredOn=t;newly.push(id)}else r.due=addDays(t,INTERVALS[r.st])}}
   for(const id of d.newIds){S.srs[id]={ph:1,st:0,due:addDays(t,1),learned:t,last:t,reviews:0};if(d.missed[id])S.srs[id].weak=true}
+  S.lastAct=t;
   if(S.streak.last!==t){S.streak.n=S.streak.last===addDays(t,-1)?S.streak.n+1:1;S.streak.last=t}
   S.history.push({date:t,n:d.newIds.length,r:d.revIds.length,miss:Object.keys(d.missed).length});
   finishPats(t);{const m=applyXp(30);bubbleText=m||'今天的任务完成啦！我也长大了一点～喂我吃苹果吧！'}d.done=true;d.mastered=newly;S.food+=5;save();hud();checkBadges();beep('win');
@@ -1880,6 +1891,7 @@ function renderToday(){
   const revs=d.revIds.map(id=>m.get(id)).filter(Boolean),news=d.newIds.map(id=>m.get(id)).filter(Boolean);
   $('#view').innerHTML=`<div class="stack">
    <div><h2>${d.extra?'加餐':'今日任务'} · ${d.date.slice(5).replace('-','月')}日</h2><p class="sub">学 ${news.length} 个新单词${revs.length?`，练 ${revs.length} 个前几天的词`:''}，最后练几句日常对话。中途可以暂停，下次接着来。</p>
+     ${S.gapDone===today()&&S.gapDays?`<div class="help">欢迎回来！停了 ${S.gapDays} 天，复习时间都往后顺延了，今天从上次的进度接着学。</div>`:''}
      ${d.from?`<div class="help">这是 ${d.from.slice(5).replace('-','月')}日 没做完的任务，进度都保留着，接着做完就行。</div>`:''}
      ${!d.extra&&news.length<S.newPerDay&&weakCount()>=WEAK_MAX-S.newPerDay&&weakCount()?`<div class="help">还有 ${weakCount()} 个词在巩固中，不会的词最多 ${WEAK_MAX} 个，所以今天${news.length?`只学 ${news.length} 个`:'先不学'}新词。把巩固的词练会，新词就会多起来。</div>`:''}</div>
    <div class="card stack" style="gap:10px">
