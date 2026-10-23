@@ -158,7 +158,7 @@ select{font:inherit;font-weight:700;padding:8px 12px;border-radius:12px;border:2
 .item{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line)}
 .item:last-child{border-bottom:0}
 .item .t{flex:1;min-width:0}
-#wbList .items{max-height:420px}#wbList .item{gap:6px;padding:8px}#wbList .item .t{min-width:64px}#wbList .btn.small{padding:6px 9px;font-size:13px}#wbList .wbck{width:22px;height:22px;accent-color:var(--leaf);flex:none}#wbList .item .tag2{font-size:11px;padding:2px 6px}
+#wbList .items{max-height:420px}#wbList .item{gap:6px;padding:8px}#wbList .item .t{min-width:64px}#wbList .btn.small{padding:6px 9px;font-size:13px}.wbck{width:22px;height:22px;accent-color:var(--leaf);flex:none}#wbList .item .tag2{font-size:11px;padding:2px 6px}
 .item .t b{font-family:var(--f-display);font-weight:700;display:block;overflow-wrap:anywhere}
 .item .t span{color:var(--muted);font-size:14px}
 textarea,input[type=text],input[type=password],input[type=search]{width:100%;box-sizing:border-box;font:inherit;padding:10px 12px;border-radius:14px;border:2px solid var(--line);background:var(--surface);color:var(--ink)}
@@ -339,6 +339,7 @@ rt{ruby-align:center}
 
 <nav class="tabs"><div class="wrap">
   <button class="tab" data-tab="today"><b>📅</b>今日任务</button>
+  <button class="tab" data-tab="read"><b>📖</b>阅读理解</button>
   <button class="tab" data-tab="practice" id="tabPrac" hidden><b>🎮</b>自由练习</button>
   <button class="tab" data-tab="pet"><b>🐣</b>我的豆豆</button>
 </div></nav>
@@ -2587,8 +2588,7 @@ function wbListHTML(){
   const list=all.filter(x=>!q||x.it.en.toLowerCase().includes(q)||x.it.zh.includes(q));
   if(!all.length)return `<div class="empty">${wbTab==='learn'?'还没有学过的词。':'还没有已掌握的词。'}</div>`;
   if(!list.length)return '<div class="empty">没有找到这个词</div>';
-  return `<div class="items">${list.slice(0,200).map(({it,r})=>`<div class="item"><input type="checkbox" class="wbck" data-wbsel="${esc(it.id)}" ${wbSel.has(it.id)?'checked':''} aria-label="选中 ${esc(it.en)}">
-    <button class="iconbtn" data-say="${esc(it.en)}" aria-label="朗读">🔊</button><div class="t"><b>${esc(it.en)}</b><span>${esc(it.zh)}</span></div>${wbTag(r)}
+  return `<div class="items">${list.slice(0,200).map(({it,r})=>`<div class="item"><button class="iconbtn" data-say="${esc(it.en)}" aria-label="朗读">🔊</button><div class="t"><b>${esc(it.en)}</b><span>${esc(it.zh)}</span></div>${wbTag(r)}
     <button class="btn small" data-wbre="${esc(it.id)}">重学</button>${r.mastered?`<button class="btn small" data-unmaster="${esc(it.id)}">复习</button>`:`<button class="btn small" data-wbm="${esc(it.id)}">掌握</button>`}</div>`).join('')}</div>
     ${list.length>200?`<p class="hint">只显示前 200 个，用搜索找更多</p>`:''}`}
 function wordBookHTML(){const L=learnedList().length,M=masteredList().length;
@@ -2596,8 +2596,6 @@ function wordBookHTML(){const L=learnedList().length,M=masteredList().length;
    <div class="scats" style="padding-bottom:2px"><button class="scat ${wbTab==='learn'?'on':''}" data-wbtab="learn">学过的词<small>${L}</small></button><button class="scat ${wbTab==='master'?'on':''}" data-wbtab="master">已掌握<small>${M}</small></button></div>
    <input type="search" id="wbQ" placeholder="🔍 搜索英文或中文" value="${esc(wbQ)}" autocomplete="off" autocapitalize="off">
    <div id="wbList">${wbListHTML()}</div>
-   <div class="help"><b>📖 阅读理解：</b>勾选想考的词（已选 <b id="wbN">${wbSel?wbSel.size:0}</b> 个，建议 5–12 个），${aiReady()?'豆包会用这些词编一篇短文，再出几道阅读题':'会用这些词的例句组成短文，再出几道词义题（接好 AI 后会编成完整的小故事）'}，看看孩子是不是真掌握了。
-     <div class="row" style="margin-top:8px"><button class="btn small" id="wbAll" type="button">全选当前</button><button class="btn small" id="wbNone" type="button">清空</button><button class="btn go" id="wbRead" type="button">📖 生成阅读理解</button></div></div>
    <div class="help"><b>➕ 手动添加单词</b>（比如课外已经会的词）
      <div class="row" style="margin-top:8px;flex-wrap:nowrap"><input type="text" id="wbEn" placeholder="英文" autocapitalize="off" autocomplete="off" style="flex:1"><input type="text" id="wbZh" placeholder="中文（可不填）" style="flex:1"></div>
      <div class="row" style="margin-top:8px"><button class="btn small go" id="wbAddL" type="button">加到学过的词</button><button class="btn small sun" id="wbAddM" type="button">加到已掌握</button></div></div>
@@ -2617,19 +2615,48 @@ async function wbAdd(mastered){const en=$('#wbEn').value.trim();let zh=$('#wbZh'
   save();wbTab=mastered?'master':'learn';toast(`${it.en} 已加到${mastered?'已掌握':'学过的词'}`);renderDecks();setTimeout(()=>{const c=$('#wbCard');if(c)c.scrollIntoView({block:'start'})},50)}
 function wbBind(){
   const q=$('#wbQ');if(!q)return;
-  const redraw=()=>{$('#wbList').innerHTML=wbListHTML();$('#wbN').textContent=wbSel.size};
+  const redraw=()=>{$('#wbList').innerHTML=wbListHTML()};
   q.oninput=()=>{wbQ=q.value;redraw()};
-  $('#wbCard').addEventListener('change',e=>{const c=e.target.closest('[data-wbsel]');if(!c)return;if(c.checked)wbSel.add(c.dataset.wbsel);else wbSel.delete(c.dataset.wbsel);$('#wbN').textContent=wbSel.size});
   $('#wbCard').addEventListener('click',e=>{
     const tb=e.target.closest('[data-wbtab]');if(tb){wbTab=tb.dataset.wbtab;renderDecks();setTimeout(()=>{const c=$('#wbCard');if(c)c.scrollIntoView({block:'start'})},30);return}
     const re=e.target.closest('[data-wbre]');if(re){const it=wordMap().get(re.dataset.wbre);relearn(re.dataset.wbre);toast(`${it?it.en:''} 放回新词了，下次学新词时先学它`);redraw();return}
     const mm=e.target.closest('[data-wbm]');if(mm){const r=S.srs[mm.dataset.wbm];if(r){r.mastered=true;r.masteredOn=today();r.weak=false}save();toast('已设为掌握');redraw();return}});
-  $('#wbAll').onclick=()=>{const qq=wbQ.trim().toLowerCase();(wbTab==='learn'?learnedList():masteredList()).filter(x=>!qq||x.it.en.toLowerCase().includes(qq)||x.it.zh.includes(qq)).forEach(x=>wbSel.add(x.it.id));redraw()};
-  $('#wbNone').onclick=()=>{wbSel.clear();redraw()};
-  $('#wbRead').onclick=()=>{const m=wordMap();const items=[...wbSel].map(id=>m.get(id)).filter(Boolean);if(items.length<2)return toast('至少选 2 个词');runReading(items.slice(0,15))};
   $('#wbAddL').onclick=()=>wbAdd(false);$('#wbAddM').onclick=()=>wbAdd(true);
 }
 
+/* ---------- 阅读理解页签：挑词 → 生成短文和阅读题 ---------- */
+let rdTab='learn',rdQ='';
+function rdListHTML(){const q=rdQ.trim().toLowerCase();const all=rdTab==='learn'?learnedList():masteredList();
+  const list=all.filter(x=>!q||x.it.en.toLowerCase().includes(q)||x.it.zh.includes(q));
+  if(!all.length)return `<div class="empty">${rdTab==='learn'?'还没有学过的词，先去完成今日任务吧。':'还没有已掌握的词。'}</div>`;
+  if(!list.length)return '<div class="empty">没有找到这个词</div>';
+  return `<div class="items">${list.slice(0,200).map(({it})=>`<label class="item" style="cursor:pointer"><input type="checkbox" class="wbck" data-rdsel="${esc(it.id)}" ${wbSel.has(it.id)?'checked':''}>
+    <div class="t"><b>${esc(it.en)}</b><span>${esc(it.zh)}</span></div></label>`).join('')}</div>`}
+function renderRead(){
+  if(!wbSel)wbSel=new Set(learnedList().slice(0,10).map(x=>x.it.id));
+  const L=learnedList().length,M=masteredList().length,hist=(S.readings||[]).slice(-8).reverse();
+  $('#view').innerHTML=`<div class="stack">
+   <div><h2>📖 阅读理解</h2><p class="sub">用学过的单词编一篇小短文，读完做几道题，看看是不是真的掌握了。</p></div>
+   <div class="card stack" style="gap:10px;align-items:stretch">
+    <button class="btn go" id="rdQuick" style="font-size:19px;padding:14px" ${L+M<2?'disabled':''}>✨ 用最近学的 10 个词生成</button>
+    <p class="hint center" style="margin:0">${aiReady()?'豆包会编一篇新短文，再出 4 道阅读题':'没接 AI 时，用这些词的例句组成短文，题目考词义'}</p></div>
+   <div class="card stack" style="gap:10px">
+    <div class="secl" style="margin:0">或者自己挑词（已选 <b id="rdN">${wbSel.size}</b> 个，建议 5–12 个）</div>
+    <div class="scats" style="padding-bottom:2px"><button class="scat ${rdTab==='learn'?'on':''}" data-rdtab="learn">学过的词<small>${L}</small></button><button class="scat ${rdTab==='master'?'on':''}" data-rdtab="master">已掌握<small>${M}</small></button></div>
+    <input type="search" id="rdQ" placeholder="🔍 搜索英文或中文" value="${esc(rdQ)}" autocomplete="off" autocapitalize="off">
+    <div id="rdList">${rdListHTML()}</div>
+    <div class="row"><button class="btn small" id="rdAll" type="button">全选当前</button><button class="btn small" id="rdNone" type="button">清空</button><button class="btn go" id="rdMake" type="button">📖 生成阅读理解</button></div></div>
+   ${hist.length?`<div class="card stack" style="gap:8px"><div class="secl" style="margin:0">最近的阅读</div>${hist.map(h=>`<div class="row" style="justify-content:space-between;flex-wrap:nowrap"><span class="sub" style="margin:0">${h.date.slice(5).replace('-','/')} · ${esc(h.words.slice(0,5).join(', '))}${h.words.length>5?'…':''}</span><b>${'⭐'.repeat(h.score)}${'☆'.repeat(Math.max(0,h.total-h.score))}</b></div>`).join('')}</div>`:''}
+  </div>`;
+  const redraw=()=>{$('#rdList').innerHTML=rdListHTML();$('#rdN').textContent=wbSel.size};
+  $('#rdQ').oninput=e=>{rdQ=e.target.value;$('#rdList').innerHTML=rdListHTML()};
+  $('#rdList').addEventListener('change',e=>{const c=e.target.closest('[data-rdsel]');if(!c)return;if(c.checked)wbSel.add(c.dataset.rdsel);else wbSel.delete(c.dataset.rdsel);$('#rdN').textContent=wbSel.size});
+  document.querySelectorAll('[data-rdtab]').forEach(b=>b.onclick=()=>{rdTab=b.dataset.rdtab;renderRead()});
+  $('#rdAll').onclick=()=>{const q=rdQ.trim().toLowerCase();(rdTab==='learn'?learnedList():masteredList()).filter(x=>!q||x.it.en.toLowerCase().includes(q)||x.it.zh.includes(q)).forEach(x=>wbSel.add(x.it.id));redraw()};
+  $('#rdNone').onclick=()=>{wbSel.clear();redraw()};
+  $('#rdMake').onclick=()=>{const m=wordMap();const items=[...wbSel].map(id=>m.get(id)).filter(Boolean);if(items.length<2)return toast('至少选 2 个词');runReading(items.slice(0,15))};
+  $('#rdQuick').onclick=()=>{const pool=learnedList().slice(0,10).map(x=>x.it);const items=pool.length>=4?pool:pool.concat(masteredList().slice(0,10-pool.length).map(x=>x.it));runReading(items)};
+}
 /* ---------- 阅读理解：用选中的词编短文 + 出题 ---------- */
 async function makeReading(items){
   if(aiReady()){try{
@@ -2647,7 +2674,8 @@ async function makeReading(items){
   return {title:'Word Story',story,storyZh:withEx.map(i=>i.exZh).join(''),qs,ai:false}}
 async function runReading(items){
   const ctx={tok:++RUN,mode:'free',items,pool:items,ok:0,step:{ico:'📖',name:'阅读理解'}};
-  flowShell(ctx);window.scrollTo(0,0);const back=$('.ghead [data-go]');if(back)back.dataset.go='today';
+  tab='read';document.querySelectorAll('.tab').forEach(b=>b.dataset.tab==='read'?b.setAttribute('aria-current','page'):b.removeAttribute('aria-current'));
+  flowShell(ctx);window.scrollTo(0,0);const back=$('.ghead [data-go]');if(back){back.dataset.go='read';back.textContent='← 返回'}
   $('#fTitle').textContent='📖 阅读理解';$('#fRound').textContent=`${items.length} 个词`;
   $('#gbody').innerHTML=`<div class="card result stack"><div class="ptitle">${esc(S.pet.name)}正在编短文…</div><p>用这 ${items.length} 个词：${items.map(i=>esc(i.en)).join('、')}</p></div>`;
   const R=await makeReading(items);if(!alive(ctx))return;
@@ -2686,7 +2714,7 @@ async function runReading(items){
     <div class="big">${'⭐'.repeat(right)}${'☆'.repeat(n-right)}</div><p>奖励 ${right>=n?3:1} 个苹果 🍎</p>
     ${weakW.length?`<div><div class="secl">可能还没掌握的词</div><div class="wordchips center">${weakW.map(i=>`<span class="wc miss">${esc(i.en)} ${esc(i.zh)}</span>`).join('')}</div>
       <div class="row center" style="margin-top:8px"><button class="btn sun" id="rdRe">把这些词再学一遍</button></div></div>`:''}
-    <div class="row center"><button class="btn go" data-go="today">完成</button></div></div>`;
+    <div class="row center"><button class="btn" data-go="read">再做一篇</button><button class="btn go" data-go="today">完成</button></div></div>`;
   const rr=$('#rdRe');if(rr)rr.onclick=()=>{weakW.forEach(i=>relearn(i.id));rr.disabled=true;rr.textContent='已放回新词，下次先学它们'};
 }
 
@@ -2696,13 +2724,13 @@ function renderDecks(){
   const mastered=Object.entries(S.srs).filter(([id,r])=>r.mastered&&m.has(id));
   const d=deck(),dNoEx=d.items.filter(i=>!hasEx(i));
   $('#view').innerHTML=`<div class="stack">
-   <div><h2>我的词库</h2><p class="sub">每天的新单词：先从「使用中」的词库按顺序取（每天会插入最多 2 个生词本里的词），这个词库学完了自动接着学其他词库。点 ✏️ 可以改词库名字。</p>
+   <div><h2>我的词库</h2><p class="sub">每天的新单词：先从「使用中」的词库按顺序取（每天会插入最多 2 个生词本里的词），这个词库学完了自动接着学其他词库。点 ✏️ 可以改词库名字；打开词库，点「⤒先学」或 ↑↓ 可以调整学习顺序。</p>
     <div class="stack" style="gap:10px">${S.decks.map(dk=>{const learned=dk.items.filter(i=>S.srs[i.id]).length;return `
      <div class="deck ${dk.id===S.active?'on':''}"><div class="nm">${renaming===dk.id?`<div class="row" style="gap:6px;flex-wrap:nowrap"><input type="text" id="renIn" value="${esc(dk.name)}" maxlength="20" style="padding:6px 10px"><button class="btn small go" data-rensave="${dk.id}">保存</button></div>`:`${esc(dk.name)} <button class="linkbtn" data-ren="${dk.id}" style="margin:0;text-decoration:none" aria-label="改名">✏️</button>`}<small>${dk.items.length} 个单词 · 学过 ${learned} 个 · ${dk.items.filter(hasEx).length} 个有例句</small></div>
       ${dk.id===S.active?'<span class="chip">使用中</span>':`<button class="btn small go" data-use="${dk.id}">使用</button>`}
       <button class="btn small" data-open="${dk.id}">${openDeck===dk.id?'收起':'查看'}</button><button class="btn small" data-deldeck="${dk.id}" aria-label="删除词库">✕</button></div>
      ${openDeck===dk.id?`<div class="items">${dk.items.map((it,k)=>`<div class="item"><button class="iconbtn" data-say="${esc(it.en)}" aria-label="朗读">🔊</button>
-       <div class="t"><b>${esc(it.en)}</b><span>${esc(it.zh)}</span>${it.ex?`<em>${esc(it.ex)} ${esc(it.exZh)}</em>`:''}</div>${dk.id===DUP?`<button class="btn small go" data-relearn="${k}">重新学</button>`:statusTag(it)}<button class="btn small" data-del="${dk.id}:${k}" aria-label="删除">✕</button></div>`).join('')||'<div class="empty">空空的</div>'}</div>
+       <div class="t"><b>${esc(it.en)}</b><span>${esc(it.zh)}</span>${it.ex?`<em>${esc(it.ex)} ${esc(it.exZh)}</em>`:''}</div>${dk.id===DUP?`<button class="btn small go" data-relearn="${k}">重新学</button>`:statusTag(it)}${dk.id!==DUP&&!S.srs[it.id]?`<button class="btn small" data-top="${dk.id}:${k}" aria-label="排到最前，先学">⤒先学</button><button class="btn small" data-mv="${dk.id}:${k}:-1" aria-label="上移">↑</button><button class="btn small" data-mv="${dk.id}:${k}:1" aria-label="下移">↓</button>`:''}<button class="btn small" data-del="${dk.id}:${k}" aria-label="删除">✕</button></div>`).join('')||'<div class="empty">空空的</div>'}</div>
        ${dk.id===DUP?`<div class="help">这些词导入时发现已经在「已掌握」里了。需要重新学的点「重新学」，会移出已掌握、放进生词本；不需要的直接删掉这个文件夹。<div class="row" style="margin-top:8px"><button class="btn small go" data-relearn="*">全部重新学</button></div></div>`:''}`:''}`}).join('')}</div>
     ${aiReady()&&dNoEx.length?`<div class="help" style="margin-top:10px">「${esc(d.name)}」有 ${dNoEx.length} 个词没有例句。<button class="btn small" id="aiD" style="margin-left:6px">✨ 让 AI 配例句</button></div>`:''}</div>
 
@@ -2810,7 +2838,7 @@ function askPin(ok){let sh=$('#pinSheet');if(sh)sh.remove();sh=document.createEl
 function go(t){if(t!=='decks')pinOK=false;else if(!pinOK){return askPin(()=>{pinOK=true;go('decks')})}
   tab=t;RUN++;keyH=null;{const ws=document.getElementById('wsheet');if(ws)ws.remove()}try{hush()}catch(e){}
   document.querySelectorAll('.tab').forEach(b=>b.dataset.tab===t?b.setAttribute('aria-current','page'):b.removeAttribute('aria-current'));
-  ({today:renderToday,practice:renderPractice,pet:renderPet,decks:renderDecks})[t]();hud();window.scrollTo(0,0)}
+  ({today:renderToday,read:renderRead,practice:renderPractice,pet:renderPet,decks:renderDecks})[t]();hud();window.scrollTo(0,0)}
 document.addEventListener('click',e=>{
   if(petClick(e))return;
   const g=e.target.closest('[data-go]');if(g)return go(g.dataset.go);
@@ -2824,6 +2852,11 @@ document.addEventListener('click',e=>{
   const rn=e.target.closest('[data-ren]');if(rn){renaming=rn.dataset.ren;renderDecks();const i=$('#renIn');if(i){i.focus();i.select()}return}
   const rs=e.target.closest('[data-rensave]');if(rs){const dk=S.decks.find(x=>x.id===rs.dataset.rensave);const v=($('#renIn').value||'').trim();if(dk&&v){dk.name=v;save();hud();toast('已改名')}renaming=null;return renderDecks()}
   const um=e.target.closest('[data-unmaster]');if(um){const r=S.srs[um.dataset.unmaster];if(r){r.mastered=false;r.st=0;r.due=addDays(today(),1)}save();toast('明天会复习它');return renderDecks()}
+  const tp=e.target.closest('[data-top],[data-mv]');if(tp){const v=(tp.dataset.top||tp.dataset.mv).split(':');const dir=tp.dataset.mv?+v.pop():0;const k=+v.pop(),id=v.join(':');const dk=S.decks.find(x=>x.id===id);if(!dk)return;
+    const it=dk.items[k];if(!it)return;dk.items.splice(k,1);
+    if(!dir){/* 排到所有没学过的词最前面 */const first=dk.items.findIndex(x=>!S.srs[x.id]);dk.items.splice(first<0?dk.items.length:first,0,it);toast(`${it.en} 排到最前，下次新词先学它`)}
+    else dk.items.splice(Math.max(0,Math.min(dk.items.length,k+dir)),0,it);
+    if(S.day&&!S.day.started&&!S.day.done)buildDay(true);save();const y=window.scrollY;renderDecks();window.scrollTo(0,y);return}
   const d=e.target.closest('[data-del]');if(d){const [id,k]=[d.dataset.del.slice(0,d.dataset.del.lastIndexOf(':')),+d.dataset.del.split(':').pop()];const dk=S.decks.find(x=>x.id===id);dk.items.splice(k,1);save();return renderDecks()}
   const dd=e.target.closest('[data-deldeck]');if(dd){
     if(S.decks.length<=1)return toast('至少要保留一个词库');
