@@ -158,9 +158,10 @@ select{font:inherit;font-weight:700;padding:8px 12px;border-radius:12px;border:2
 .item{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line)}
 .item:last-child{border-bottom:0}
 .item .t{flex:1;min-width:0}
+#wbList .items{max-height:420px}#wbList .item{gap:6px;padding:8px}#wbList .item .t{min-width:64px}#wbList .btn.small{padding:6px 9px;font-size:13px}#wbList .wbck{width:22px;height:22px;accent-color:var(--leaf);flex:none}#wbList .item .tag2{font-size:11px;padding:2px 6px}
 .item .t b{font-family:var(--f-display);font-weight:700;display:block;overflow-wrap:anywhere}
 .item .t span{color:var(--muted);font-size:14px}
-textarea,input[type=text],input[type=password]{width:100%;box-sizing:border-box;font:inherit;padding:10px 12px;border-radius:14px;border:2px solid var(--line);background:var(--surface);color:var(--ink)}
+textarea,input[type=text],input[type=password],input[type=search]{width:100%;box-sizing:border-box;font:inherit;padding:10px 12px;border-radius:14px;border:2px solid var(--line);background:var(--surface);color:var(--ink)}
 textarea{min-height:140px;resize:vertical;font-family:ui-monospace,Menlo,Consolas,"PingFang SC",monospace;font-size:14px}
 .help{font-size:13px;color:var(--muted);background:var(--surface2);border-radius:14px;padding:10px 12px}
 .help code{font-family:ui-monospace,Menlo,Consolas,monospace;background:var(--surface);padding:1px 5px;border-radius:6px}
@@ -536,7 +537,8 @@ function buildDay(force){
 function nextNew(n){const d=deck(),my=myDeck();const unl=dk=>dk?dk.items.filter(it=>!S.srs[it.id]):[];
   const myU=my&&d!==my?unl(my):[];const others=S.decks.filter(x=>x!==d&&x!==my&&x.id!=='dupmaster').flatMap(unl);
   const m=wordMap(),seen=new Set(Object.keys(S.srs).map(id=>m.get(id)).filter(Boolean).map(it=>it.en.toLowerCase()));
-  return myU.slice(0,2).concat(unl(d),myU.slice(2),others).filter(it=>{const k=it.en.toLowerCase();if(seen.has(k))return false;seen.add(k);return true}).slice(0,n).map(it=>it.id)}
+  const rq=(S.relearnQ||[]).map(id=>m.get(id)).filter(it=>it&&!S.srs[it.id]);S.relearnQ=rq.map(it=>it.id);
+  return rq.concat(myU.slice(0,2),unl(d),myU.slice(2),others).filter(it=>{const k=it.en.toLowerCase();if(seen.has(k))return false;seen.add(k);return true}).slice(0,n).map(it=>it.id)}
 function dayItems(){const m=wordMap();return [...S.day.revIds,...S.day.newIds].map(id=>m.get(id)).filter(Boolean)}
 
 function markMiss(ctx,id){S.wc[id]=(S.wc[id]||0)+1;if(ctx.mode==='day')S.day.missed[id]=(S.day.missed[id]||0)+1;save()}
@@ -1879,7 +1881,8 @@ function renderToday(){
       ${missed.length?`<div><div class="secl">今天出过错的词（明天继续巩固，直到全对）</div>${chips(missed)}</div>`:'<div>今天一个都没错，太厉害了！</div>'}
       ${d.mastered&&d.mastered.length?`<div><div class="secl">新掌握的单词</div>${chips(d.mastered,'rev')}</div>`:''}
       <p class="hint">明天要复习 ${dueOn(addDays(today(),1))} 个旧单词，再学 ${newQuota()} 个新词。${weakCount()?`（巩固中的词有 ${weakCount()} 个，不会的词最多 ${WEAK_MAX} 个，新词会相应减少）`:''}</p>
-      <div class="row center"><button class="btn go" data-go="pet">去喂${esc(S.pet.name)}</button>${nextNew(1).length?'<button class="btn sun" id="extra">🍱 再学一组新词（加餐）</button>':''}</div></div></div>`;
+      <div class="row center"><button class="btn go" data-go="pet">去喂${esc(S.pet.name)}</button>${learnedList().length+masteredList().length>=4?'<button class="btn" id="readQuiz">📖 阅读小测验</button>':''}${nextNew(1).length?'<button class="btn sun" id="extra">🍱 再学一组新词（加餐）</button>':''}</div></div></div>`;
+    const rq=$('#readQuiz');if(rq)rq.onclick=()=>{const pool=learnedList().slice(0,10).map(x=>x.it);const items=pool.length>=4?pool:pool.concat(masteredList().slice(0,10-pool.length).map(x=>x.it));runReading(items)};
     const ex=$('#extra');if(ex)ex.onclick=()=>{S.day={date:today(),newIds:nextNew(S.newPerDay),revIds:[],aIds:[],bIds:[],curveIds:[],step:0,missed:{},started:false,done:false,extra:true,patRev:[],patNew:[]};save();renderToday()};
     return;
   }
@@ -2566,11 +2569,127 @@ function splitMastered(words){const fresh=[],dup=[];for(const w of words)(isMast
   if(dup.length){let d=S.decks.find(x=>x.id===DUP);if(!d){d={id:DUP,name:DUP_NAME,items:[]};S.decks.push(d)}addWords(d,dup);save()}return {fresh,dup}}
 let impSel='__new';let openDeck=null,renaming=null;const openSecs=new Set();
 function foldCards(){document.querySelectorAll('#view .card').forEach(c=>{const h=c.querySelector(':scope > h2');if(!h)return;
-  const key=h.textContent.split('·')[0].trim();const d=document.createElement('details');d.className=c.className.replace(/\bstack\b/,'')+' fold';if(openSecs.has(key))d.open=true;
+  const key=h.textContent.split('·')[0].trim();const d=document.createElement('details');d.className=c.className.replace(/\bstack\b/,'')+' fold';if(c.id)d.id=c.id;if(openSecs.has(key))d.open=true;
   const sm=document.createElement('summary');sm.appendChild(h);const body=document.createElement('div');body.className='stack foldbody';body.style.gap='12px';
   while(c.firstChild)body.appendChild(c.firstChild);d.append(sm,body);c.replaceWith(d);d.addEventListener('toggle',()=>{d.open?openSecs.add(key):openSecs.delete(key)})})}
 function statusTag(it){const r=S.srs[it.id];if(!r)return '<span class="tag2">未学</span>';if(r.mastered)return '<span class="tag2 m">已掌握</span>';if(phaseOf(r)==='A')return `<span class="tag2">第 ${r.ph+1} 天</span>`;if(phaseOf(r)==='B')return `<span class="tag2 ${r.weak?'w':''}">第 4 天练习</span>`;if(r.weak)return `<span class="tag2 w">${r.due<=today()?'今天巩固':'巩固中'}</span>`;
   return `<span class="tag2 r">${r.due<=today()?'今天复习':r.due.slice(5).replace('-','/')+' 复习'}</span>`}
+/* ---------- 单词本：学习中 / 已掌握，搜索、重新学、手动添加，挑词生成阅读理解 ---------- */
+let wbTab='learn',wbQ='',wbSel=null;
+const MANUAL='manual';
+function learnedList(){const m=wordMap();return Object.entries(S.srs).filter(([id,r])=>!r.mastered&&!r.moved&&m.has(id)&&!id.startsWith(DUP+'|')).map(([id,r])=>({it:m.get(id),r})).sort((a,b)=>(b.r.learned||'')<(a.r.learned||'')?-1:1)}
+function masteredList(){const m=wordMap();return Object.entries(S.srs).filter(([id,r])=>r.mastered&&m.has(id)).map(([id,r])=>({it:m.get(id),r})).sort((a,b)=>(b.r.masteredOn||'')<(a.r.masteredOn||'')?-1:1)}
+function wbTag(r){if(r.mastered)return '<span class="tag2 m">已掌握</span>';const p=phaseOf(r);if(p==='A')return `<span class="tag2">第 ${r.ph+1} 天</span>`;if(p==='B')return '<span class="tag2">第 4 天练习</span>';
+  return `<span class="tag2 ${r.weak?'w':'r'}">${r.weak?'巩固中':r.due<=today()?'今天复习':r.due.slice(5).replace('-','/')+' 复习'}</span>`}
+function wbListHTML(){
+  if(!wbSel)wbSel=new Set(learnedList().slice(0,10).map(x=>x.it.id));
+  const q=wbQ.trim().toLowerCase();const all=wbTab==='learn'?learnedList():masteredList();
+  const list=all.filter(x=>!q||x.it.en.toLowerCase().includes(q)||x.it.zh.includes(q));
+  if(!all.length)return `<div class="empty">${wbTab==='learn'?'还没有学过的词。':'还没有已掌握的词。'}</div>`;
+  if(!list.length)return '<div class="empty">没有找到这个词</div>';
+  return `<div class="items">${list.slice(0,200).map(({it,r})=>`<div class="item"><input type="checkbox" class="wbck" data-wbsel="${esc(it.id)}" ${wbSel.has(it.id)?'checked':''} aria-label="选中 ${esc(it.en)}">
+    <button class="iconbtn" data-say="${esc(it.en)}" aria-label="朗读">🔊</button><div class="t"><b>${esc(it.en)}</b><span>${esc(it.zh)}</span></div>${wbTag(r)}
+    <button class="btn small" data-wbre="${esc(it.id)}">重学</button>${r.mastered?`<button class="btn small" data-unmaster="${esc(it.id)}">复习</button>`:`<button class="btn small" data-wbm="${esc(it.id)}">掌握</button>`}</div>`).join('')}</div>
+    ${list.length>200?`<p class="hint">只显示前 200 个，用搜索找更多</p>`:''}`}
+function wordBookHTML(){const L=learnedList().length,M=masteredList().length;
+  return `<div class="card stack" style="gap:10px" id="wbCard"><h2 style="font-size:21px">📒 单词本</h2>
+   <div class="scats" style="padding-bottom:2px"><button class="scat ${wbTab==='learn'?'on':''}" data-wbtab="learn">学过的词<small>${L}</small></button><button class="scat ${wbTab==='master'?'on':''}" data-wbtab="master">已掌握<small>${M}</small></button></div>
+   <input type="search" id="wbQ" placeholder="🔍 搜索英文或中文" value="${esc(wbQ)}" autocomplete="off" autocapitalize="off">
+   <div id="wbList">${wbListHTML()}</div>
+   <div class="help"><b>📖 阅读理解：</b>勾选想考的词（已选 <b id="wbN">${wbSel?wbSel.size:0}</b> 个，建议 5–12 个），${aiReady()?'豆包会用这些词编一篇短文，再出几道阅读题':'会用这些词的例句组成短文，再出几道词义题（接好 AI 后会编成完整的小故事）'}，看看孩子是不是真掌握了。
+     <div class="row" style="margin-top:8px"><button class="btn small" id="wbAll" type="button">全选当前</button><button class="btn small" id="wbNone" type="button">清空</button><button class="btn go" id="wbRead" type="button">📖 生成阅读理解</button></div></div>
+   <div class="help"><b>➕ 手动添加单词</b>（比如课外已经会的词）
+     <div class="row" style="margin-top:8px;flex-wrap:nowrap"><input type="text" id="wbEn" placeholder="英文" autocapitalize="off" autocomplete="off" style="flex:1"><input type="text" id="wbZh" placeholder="中文（可不填）" style="flex:1"></div>
+     <div class="row" style="margin-top:8px"><button class="btn small go" id="wbAddL" type="button">加到学过的词</button><button class="btn small sun" id="wbAddM" type="button">加到已掌握</button></div></div>
+   <p class="hint" style="margin:0">「重学」：放回新词，下次学新词时排在最前面，从第 1 天重新学；「掌握」：直接算已掌握；「复习」：从已掌握移回复习。</p></div>`}
+function relearn(id){const it=wordMap().get(id);if(!it)return;const k=it.en.toLowerCase();
+  for(const x of allItems())if(x.en.toLowerCase()===k&&S.srs[x.id])delete S.srs[x.id];
+  S.relearnQ=(S.relearnQ||[]).filter(i=>i!==id);S.relearnQ.unshift(id);
+  if(S.day&&!S.day.started&&!S.day.done)buildDay(true);save()}
+async function wbAdd(mastered){const en=$('#wbEn').value.trim();let zh=$('#wbZh').value.trim();if(!en)return toast('先填英文单词');
+  if(CJK.test(en))return toast('第一个框填英文哦');
+  let it=allItems().find(i=>i.en.toLowerCase()===en.toLowerCase()&&!i.id.startsWith(DUP+'|'));
+  if(!it){if(!zh){const loc=lookupLocal(en);if(loc)zh=loc.zh}
+    if(!zh&&aiReady()){try{const r=await aiJSON(`英语单词或短语 "${en}" 最常用的中文意思是什么？只回复 JSON：{"zh":"简短中文意思"}`,12000);zh=String(r&&r.zh||'').trim()}catch(e){}}
+    if(!zh)return toast('请填上中文意思');
+    let d=S.decks.find(x=>x.id===MANUAL);if(!d){d={id:MANUAL,name:'我添加的词',items:[]};S.decks.push(d)}addWords(d,[{en,zh}]);it=d.items.find(i=>i.en.toLowerCase()===en.toLowerCase())}
+  const t=today();S.srs[it.id]=mastered?{ph:9,st:INTERVALS.length,mastered:true,masteredOn:t,learned:t,last:t,reviews:0,due:t}:{ph:9,st:1,due:addDays(t,2),learned:t,last:t,reviews:0};
+  save();wbTab=mastered?'master':'learn';toast(`${it.en} 已加到${mastered?'已掌握':'学过的词'}`);renderDecks();setTimeout(()=>{const c=$('#wbCard');if(c)c.scrollIntoView({block:'start'})},50)}
+function wbBind(){
+  const q=$('#wbQ');if(!q)return;
+  const redraw=()=>{$('#wbList').innerHTML=wbListHTML();$('#wbN').textContent=wbSel.size};
+  q.oninput=()=>{wbQ=q.value;redraw()};
+  $('#wbCard').addEventListener('change',e=>{const c=e.target.closest('[data-wbsel]');if(!c)return;if(c.checked)wbSel.add(c.dataset.wbsel);else wbSel.delete(c.dataset.wbsel);$('#wbN').textContent=wbSel.size});
+  $('#wbCard').addEventListener('click',e=>{
+    const tb=e.target.closest('[data-wbtab]');if(tb){wbTab=tb.dataset.wbtab;renderDecks();setTimeout(()=>{const c=$('#wbCard');if(c)c.scrollIntoView({block:'start'})},30);return}
+    const re=e.target.closest('[data-wbre]');if(re){const it=wordMap().get(re.dataset.wbre);relearn(re.dataset.wbre);toast(`${it?it.en:''} 放回新词了，下次学新词时先学它`);redraw();return}
+    const mm=e.target.closest('[data-wbm]');if(mm){const r=S.srs[mm.dataset.wbm];if(r){r.mastered=true;r.masteredOn=today();r.weak=false}save();toast('已设为掌握');redraw();return}});
+  $('#wbAll').onclick=()=>{const qq=wbQ.trim().toLowerCase();(wbTab==='learn'?learnedList():masteredList()).filter(x=>!qq||x.it.en.toLowerCase().includes(qq)||x.it.zh.includes(qq)).forEach(x=>wbSel.add(x.it.id));redraw()};
+  $('#wbNone').onclick=()=>{wbSel.clear();redraw()};
+  $('#wbRead').onclick=()=>{const m=wordMap();const items=[...wbSel].map(id=>m.get(id)).filter(Boolean);if(items.length<2)return toast('至少选 2 个词');runReading(items.slice(0,15))};
+  $('#wbAddL').onclick=()=>wbAdd(false);$('#wbAddM').onclick=()=>wbAdd(true);
+}
+
+/* ---------- 阅读理解：用选中的词编短文 + 出题 ---------- */
+async function makeReading(items){
+  if(aiReady()){try{
+    const r=await aiJSON(`请用下面这些英语单词，为${lvt().who}写一篇连贯、有趣的小短文（${lvt().story}，${lvt().words}），每个单词至少出现一次（可以用复数、过去式等简单变形）。
+再出 4 道阅读理解选择题：题目和选项用简单英文；考对短文内容和这些单词意思的理解（至少 2 道题直接考某个单词在文中的意思）；每题 3 个选项，只有一个正确，答案要能从短文里找到。
+单词：${items.map(i=>i.en+'（'+i.zh+'）').join('、')}
+只回复 JSON：{"title":"英文标题","story":"英文短文","storyZh":"短文中文翻译","questions":[{"q":"英文题目","qZh":"题目的中文","options":["选项1","选项2","选项3"],"answer":0,"why":"一句中文解释","word":"这题主要考的单词，没有就留空"}]}`,60000);
+    const qs=(r&&Array.isArray(r.questions)?r.questions:[]).filter(x=>x&&x.q&&Array.isArray(x.options)&&x.options.length>=2&&+x.answer>=0&&+x.answer<x.options.length);
+    if(r&&r.story&&qs.length)return {title:String(r.title||'Reading'),story:String(r.story),storyZh:String(r.storyZh||''),qs:qs.map(x=>({q:String(x.q),qZh:String(x.qZh||''),options:x.options.map(String),answer:+x.answer,why:String(x.why||''),word:String(x.word||'')})),ai:true}
+  }catch(e){toast('AI 暂时没编出来，先用例句组成短文')}}
+  /* 没有 AI：用例句拼成短文，题目考词义 */
+  const withEx=items.filter(hasEx);const story=(withEx.length?withEx:items).map(i=>i.ex||(i.en+'.')).join(' ');
+  const qs=shuffle(items).slice(0,5).map(it=>{const opts=shuffle([it.zh].concat(shuffle(allItems().filter(x=>x.zh!==it.zh)).slice(0,2).map(x=>x.zh)));
+    return {q:`In the story, what does "${it.en}" mean?`,qZh:`短文里的 ${it.en} 是什么意思？`,options:opts,answer:opts.indexOf(it.zh),why:`${it.en} = ${it.zh}`,word:it.en}});
+  return {title:'Word Story',story,storyZh:withEx.map(i=>i.exZh).join(''),qs,ai:false}}
+async function runReading(items){
+  const ctx={tok:++RUN,mode:'free',items,pool:items,ok:0,step:{ico:'📖',name:'阅读理解'}};
+  flowShell(ctx);window.scrollTo(0,0);const back=$('.ghead [data-go]');if(back)back.dataset.go='today';
+  $('#fTitle').textContent='📖 阅读理解';$('#fRound').textContent=`${items.length} 个词`;
+  $('#gbody').innerHTML=`<div class="card result stack"><div class="ptitle">${esc(S.pet.name)}正在编短文…</div><p>用这 ${items.length} 个词：${items.map(i=>esc(i.en)).join('、')}</p></div>`;
+  const R=await makeReading(items);if(!alive(ctx))return;
+  const keys=items.map(i=>i.en);
+  const keyset=keys.map(k=>k.toLowerCase().split(' ')[0]);
+  const isKey=x=>{const l=x.toLowerCase();return keyset.some(k=>l===k||l===k+'s'||l===k+'es'||l===k+'ed'||l===k+'d'||l===k+'ing'||(k.endsWith('e')&&l===k.slice(0,-1)+'ing')||(k.endsWith('y')&&(l===k.slice(0,-1)+'ies'||l===k.slice(0,-1)+'ied')))};
+  const mark=t=>String(t).split(/([A-Za-z][A-Za-z'’-]*)/).map((p,i)=>i%2?`<span class="tw" data-tw="${esc(p)}">${isKey(p)?'<mark>'+esc(p)+'</mark>':hintWrap(p)}</span>`:esc(p)).join('');
+  /* 第 1 步：读短文 */
+  await new Promise(res=>{
+    $('#gbody').innerHTML=`<div class="card stack" style="gap:10px"><div class="ptitle center">${esc(R.title)}</div>
+      <div class="passage" id="rdStory" style="font-size:20px;line-height:1.9">${mark(R.story)}</div>
+      ${R.storyZh?`<div class="hint" id="rdZh" hidden style="font-size:16px;line-height:1.8">${esc(R.storyZh)}</div>`:''}
+      <div class="row center"><button class="btn" id="rdSay">🔊 听短文</button>${R.storyZh?'<button class="btn" id="rdZhBtn">看中文</button>':''}</div>
+      <p class="hint center" style="margin:0">先大声读一遍短文。不认识的词点一下，会显示中文并加入生词本。</p>
+      <div class="row center"><button class="btn go" id="rdGo" style="font-size:18px;padding:12px 24px">读完了，开始答题 →</button></div></div>`;
+    $('#rdStory').querySelectorAll('.tw').forEach(el=>el.onclick=()=>tapWord(el,el.dataset.tw,R.story));
+    $('#rdSay').onclick=()=>say(R.story);const zb=$('#rdZhBtn');if(zb)zb.onclick=()=>{const z=$('#rdZh');z.hidden=!z.hidden;zb.textContent=z.hidden?'看中文':'收起中文'};
+    $('#rdGo').onclick=()=>{hush();res()}});
+  if(!alive(ctx))return;
+  /* 第 2 步：答题 */
+  const wrong=[];let right=0;
+  for(let k=0;k<R.qs.length;k++){const q=R.qs[k];
+    await new Promise(res=>{$('#fRound').textContent=`第 ${k+1}/${R.qs.length} 题`;$('#progBar').style.width=Math.round(k/R.qs.length*100)+'%';
+      $('#gbody').innerHTML=`<details class="card" style="padding:10px 14px"><summary class="hint">再看一眼短文</summary><div class="passage" style="font-size:17px;line-height:1.8;margin-top:8px">${mark(R.story)}</div></details>
+        <div class="card prompt"><div class="sent" style="font-size:21px">${esc(q.q)}</div>${q.qZh?`<div class="hint">${esc(q.qZh)}</div>`:''}</div>
+        <div class="opts" style="margin-top:12px">${q.options.map((o,j)=>`<button class="opt enopt" data-j="${j}">${esc(o)}</button>`).join('')}</div><div id="rdFb" class="sayfb" hidden></div>`;
+      let done=false;$('#gbody').querySelectorAll('.opt').forEach(b=>b.onclick=()=>{if(done)return;done=true;const j=+b.dataset.j,ok=j===q.answer;
+        $('#gbody').querySelectorAll('.opt')[q.answer].classList.add('right');if(!ok){b.classList.add('wrong','bad');wrong.push(q)}else{right++;good(ctx,b)}beep(ok?'ok':'bad');
+        const fb=$('#rdFb');fb.hidden=false;fb.className='sayfb '+(ok?'ok':'no');fb.innerHTML=`${ok?'✓ 答对了！':'答错了'}${q.why?'<br><small>'+esc(q.why)+'</small>':''}<div class="row center" style="margin-top:8px"><button class="btn small go" id="rdNext">${k+1<R.qs.length?'下一题':'看结果'}</button></div>`;
+        $('#rdNext').onclick=()=>res()})});
+    if(!alive(ctx))return}
+  /* 结果 */
+  const n=R.qs.length,weakW=[...new Set(wrong.map(q=>q.word.toLowerCase()).filter(Boolean))].map(w=>items.find(i=>i.en.toLowerCase()===w)).filter(Boolean);
+  S.readings=(S.readings||[]).concat({date:today(),words:keys,score:right,total:n}).slice(-50);S.food+=right>=n?3:1;save();hud();beep('win');$('#progBar').style.width='100%';
+  $('#gbody').innerHTML=`<div class="card result stack"><div class="ptitle">${right===n?'🎉 全对！这些词掌握得很好':right>=n/2?`答对 ${right}/${n} 题，不错！`:`答对 ${right}/${n} 题，还要加油`}</div>
+    <div class="big">${'⭐'.repeat(right)}${'☆'.repeat(n-right)}</div><p>奖励 ${right>=n?3:1} 个苹果 🍎</p>
+    ${weakW.length?`<div><div class="secl">可能还没掌握的词</div><div class="wordchips center">${weakW.map(i=>`<span class="wc miss">${esc(i.en)} ${esc(i.zh)}</span>`).join('')}</div>
+      <div class="row center" style="margin-top:8px"><button class="btn sun" id="rdRe">把这些词再学一遍</button></div></div>`:''}
+    <div class="row center"><button class="btn go" data-go="today">完成</button></div></div>`;
+  const rr=$('#rdRe');if(rr)rr.onclick=()=>{weakW.forEach(i=>relearn(i.id));rr.disabled=true;rr.textContent='已放回新词，下次先学它们'};
+}
+
 function renderDecks(){
   const m=wordMap();
   const wrong=Object.entries(S.wc).filter(([id])=>m.has(id)&&!(S.srs[id]&&S.srs[id].mastered)).sort((a,b)=>b[1]-a[1]).slice(0,12);
@@ -2625,8 +2744,7 @@ function renderDecks(){
      <div class="help">每行一个：<code>问句 | 回答</code>，也可以直接写 <code>问句? 回答</code>。拍课本对话页也行，AI 会帮你整理成这个格式。</div>
      <div class="row"><button class="btn" id="dlgImg" type="button">📷 拍照 / 图片识别</button><input type="file" id="dlgImgFile" accept="image/*" hidden><button class="btn go" id="dlgBtn" type="button">导入问句</button><span class="sub" id="dlgInfo" style="margin:0"></span></div></div></div>
 
-   <div class="card"><h2 style="font-size:21px">已掌握的单词 · ${mastered.length}</h2>
-    ${mastered.length?`<div class="items">${mastered.map(([id,r])=>{const it=m.get(id);return `<div class="item"><button class="iconbtn" data-say="${esc(it.en)}" aria-label="朗读">🔊</button><div class="t"><b>${esc(it.en)}</b><span>${esc(it.zh)}</span></div><button class="btn small" data-unmaster="${esc(id)}">移回复习</button></div>`}).join('')}</div>`:'<div class="empty">还没有。连续复习 5 次都做对的单词会出现在这里。</div>'}</div>
+   ${wordBookHTML()}
 
    <div class="card"><h2 style="font-size:21px">错词本</h2><p class="sub">出错次数最多的词。</p>
     ${wrong.length?`<div class="items">${wrong.map(([id,n])=>{const it=m.get(id);return `<div class="item"><button class="iconbtn" data-say="${esc(it.en)}" aria-label="朗读">🔊</button><div class="t"><b>${esc(it.en)}</b><span>${esc(it.zh)}</span></div><span class="chip">错 ${n}</span></div>`}).join('')}</div>`:'<div class="empty">还没有错词，太棒了！</div>'}</div>
@@ -2673,7 +2791,7 @@ function renderDecks(){
   $('#tlv').onchange=e=>{S.talkLv=e.target.value;if(S.day&&!S.day.started&&!S.day.done){Object.assign(S.day,patPlan());save()}save();toast('难度已改为：'+e.target.selectedOptions[0].textContent)};
   $('#spr').onchange=e=>{S.showPractice=e.target.checked;save();hud();toast(S.showPractice?'「自由练习」已显示在底部':'「自由练习」已隐藏')};
   const ai=$('#aiD');if(ai)ai.onclick=()=>aiFill(ai,dNoEx);
-  bindBackup();
+  bindBackup();wbBind();
   $('#resetBtn').onclick=()=>$('#resetConfirm').hidden=false;
   $('#resetYes').onclick=()=>{S=fresh();save();hud();bubbleText='';toast('已重置');renderDecks()};
 }
