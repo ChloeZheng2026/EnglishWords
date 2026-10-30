@@ -118,6 +118,8 @@ select{font:inherit;font-weight:700;padding:8px 12px;border-radius:12px;border:2
 .bad{animation:shake .4s}
 
 .garea.shake{animation:shake .4s}
+.garea.runarea{background:linear-gradient(#BFE6FF 0%,#E8F7FF 75%,#CFEFC4 75%)}.rground{position:absolute;left:0;right:0;bottom:0;height:40px;background:repeating-linear-gradient(90deg,#8BC97A 0 30px,#7DBB6C 30px 60px)}
+.garea.runarea .gpet{position:absolute;left:0;top:0;bottom:auto;width:84px}.garea.runarea .gitem{font-size:34px}
 .scats{display:flex;gap:6px;overflow-x:auto;padding:2px 0 10px;-webkit-overflow-scrolling:touch}.scat{flex:none;padding:8px 12px;border-radius:999px;border:2px solid var(--line);background:var(--surface);font-weight:700;font-size:15px;display:flex;gap:4px;align-items:center}.scat small{font-size:11px;opacity:.6}.scat.on{background:var(--leaf);color:#fff;border-color:var(--leaf)}
 .sglow{filter:drop-shadow(0 0 4px currentColor);animation:mglow 1.4s ease-in-out infinite}
 .mcore{animation:mglow 1.2s ease-in-out infinite}@keyframes mglow{50%{opacity:.45}}
@@ -1952,7 +1954,21 @@ const SPECIES=[
  {id:'pumpkin',name:'南瓜豆',body:'#FF9F2E',belly:'#FFEBD0'},
  {id:'night',name:'夜空豆',body:'#4B5BA8',belly:'#DCE2FF'},
  {id:'rainbow',name:'彩虹豆',body:'#FF7AA8',belly:'#FFF1C9'}];
-const spOf=id=>SPECIES.find(s=>s.id===id)||SPECIES[0];
+/* 「壳壳」一家：头上顶着半个蛋壳的圆蛋小伙伴，可以在商店「角色」里解锁，切换成它的样子 */
+const CHARS=[
+ {id:'egg_milk',name:'奶白壳壳',body:'#FFF4E2',belly:'#FFFFFF',stroke:'#E8D2AE',shell:'#FFE3B8',shellD:'#D9B47C',egg:1,price:0},
+ {id:'egg_berry',name:'草莓壳壳',body:'#FF9DB4',belly:'#FFE4EC',shell:'#FFFFFF',shellD:'#F06E8E',egg:1,price:30,lv:2,dots:'#FF5C86'},
+ {id:'egg_mint',name:'薄荷壳壳',body:'#8FE3C8',belly:'#E6FBF4',shell:'#FFFFFF',shellD:'#45B894',egg:1,price:30,lv:2},
+ {id:'egg_blue',name:'蓝莓壳壳',body:'#8DB8FF',belly:'#E5EFFF',shell:'#FFF6D6',shellD:'#5A86D6',egg:1,price:40,lv:3,dots:'#5A86D6'},
+ {id:'egg_lemon',name:'柠檬壳壳',body:'#FFE066',belly:'#FFF8D1',shell:'#FFFFFF',shellD:'#E0B520',egg:1,price:40,lv:4},
+ {id:'egg_choco',name:'巧克力壳壳',body:'#B9805C',belly:'#F5E3D3',shell:'#FFE3B8',shellD:'#7A4E33',egg:1,price:50,lv:5,dots:'#7A4E33'},
+ {id:'egg_grape',name:'葡萄壳壳',body:'#B79CF2',belly:'#F1EAFF',shell:'#FFFFFF',shellD:'#8063C9',egg:1,price:50,lv:6},
+ {id:'egg_star',name:'星光壳壳',body:'#4C4A8F',belly:'#D8D6FF',shell:'#FFE066',shellD:'#C9951A',egg:1,price:80,lv:8,dots:'#FFF6B0'}];
+const spOf=id=>SPECIES.find(s=>s.id===id)||CHARS.find(s=>s.id===id)||SPECIES[0];
+const SHELL=c=>`<path fill="${c.shell}" stroke="${c.shellD}" stroke-width="3" stroke-linejoin="round" d="M44 80 Q48 30 100 28 Q152 30 156 80 L146 70 L136 82 L124 68 L112 82 L100 68 L88 82 L76 68 L64 82 L54 70 Z"/>${c.dots?[[74,50],[100,40],[126,50],[88,62],[114,62]].map(([x,y])=>`<circle cx="${x}" cy="${y}" r="4.5" fill="${c.dots}"/>`).join(''):''}`;
+/* 现在显示哪个角色：自己的豆豆、毕业的豆豆、或者解锁的壳壳 */
+const lookOK=id=>!id?false:id===S.pet.sp||(S.dex||[]).some(d=>d.sp===id)||(S.chars||['egg_milk']).includes(id);
+const curLook=()=>S.look&&lookOK(S.look)?S.look:S.pet.sp;
 const ORN={
  leaf:`<path fill="#FFC52E" d="M100 48 Q82 26 100 16 Q118 26 100 48 Z"/><path class="p-mouth" style="stroke-width:3" d="M100 48 L100 56"/>`,
  fire:`<path fill="#FFB020" d="M100 52 Q76 34 92 10 Q96 26 104 22 Q100 8 112 0 Q126 30 100 52 Z"/><path fill="#FF5A3C" d="M100 50 Q90 38 98 26 Q102 36 108 32 Q112 44 100 50 Z"/>`,
@@ -2004,8 +2020,8 @@ const ITEMS=[
  {id:'window',slot:'room',ic:'🪟',name:'窗户',price:10},{id:'lights',slot:'room',ic:'✨',name:'星星灯',price:10},
  {id:'shelf',slot:'room',ic:'📚',name:'书架',price:12},{id:'bed',slot:'room',ic:'🛏️',name:'小床',price:15},
  {id:'trophy',slot:'room',ic:'🏆',name:'金奖杯',badge:'perfect'}];
-const SLOTS=[['mech','🤖 机甲'],['helm','⛑️ 头盔'],['weapon','⚔️ 武器'],['arm','🦾 手臂'],['skin','🎨 皮肤'],['hat','🎩 帽子'],['face','👓 眼镜'],['neck','🎀 配饰'],['back','🪽 背饰'],['room','🏠 小屋']];
-let shopCat='mech';
+const SLOTS=[['char','👤 角色'],['mech','🤖 机甲'],['helm','⛑️ 头盔'],['weapon','⚔️ 武器'],['arm','🦾 手臂'],['skin','🎨 皮肤'],['hat','🎩 帽子'],['face','👓 眼镜'],['neck','🎀 配饰'],['back','🪽 背饰'],['room','🏠 小屋']];
+let shopCat='char';
 const CAPE=`M44 92 Q100 64 156 92 L176 178 Q100 196 24 178 Z`;
 const WEAR={
  cap:`<path fill="#E8483A" d="M64 64 Q100 16 136 64 Z"/><rect x="104" y="58" width="50" height="9" rx="4.5" fill="#B9301F"/><circle cx="100" cy="30" r="5" fill="#B9301F"/>`,
@@ -2104,18 +2120,19 @@ function petInner(o){ // 宠物画在 0..200 坐标里
     return `<ellipse class="p-shadow" cx="100" cy="186" rx="50" ry="8"/><g class="bob" ${o.id?'id="petG"':''}><ellipse class="p-egg" cx="100" cy="112" rx="56" ry="70"/>
       ${[[78,80,10],[122,132,13],[128,78,6],[76,146,7]].map(([x,y,r])=>`<circle cx="${x}" cy="${y}" r="${r}" fill="${sp.body}" opacity=".75"/>`).join('')}${crack}</g>`;
   }
+  const egg=!!sp.egg,BODY=egg?'cx="100" cy="106" rx="58" ry="74"':'cx="100" cy="112" rx="64" ry="66"';
   const sk=eq.skin&&SKINS[eq.skin];const spc=sk?{...sp,...sk}:sp;const mech=eq.mech&&MECH[eq.mech]?eq.mech:'';
   const sc=[0,.74,.9,1.04][st],bs=`fill:${spc.body}${spc.stroke?';stroke:'+spc.stroke+';stroke-width:3':''}`;
   const mouth=m==='happy'?'M86 118 Q100 132 114 118':m==='ok'?'M88 122 L112 122':m==='sleep'?'M96 122 Q100 126 104 122':'M88 126 Q100 116 112 126';
-  const ears=st>=2?`<path style="${bs}" d="M58 70 Q48 30 80 52 Z"/><path style="${bs}" d="M142 70 Q152 30 120 52 Z"/>`:'';
-  const head=eq.helm&&WEAR[eq.helm]?'':eq.hat&&WEAR[eq.hat]?WEAR[eq.hat]:mech?mechSVG(mech,'head',false):(o.lvl>=GRAD_LV-1?`<path class="p-crown" d="M74 46 L80 22 L92 38 L100 16 L108 38 L120 22 L126 46 Z"/>`:ORN[sp.id]);
+  const ears=!egg&&st>=2?`<path style="${bs}" d="M58 70 Q48 30 80 52 Z"/><path style="${bs}" d="M142 70 Q152 30 120 52 Z"/>`:'';
+  const head=eq.helm&&WEAR[eq.helm]?'':eq.hat&&WEAR[eq.hat]?WEAR[eq.hat]:mech?mechSVG(mech,'head',false):(o.lvl>=GRAD_LV-1?`<path class="p-crown" d="M74 46 L80 22 L92 38 L100 16 L108 38 L120 22 L126 46 Z"/>`:(sp.egg?SHELL(sp):ORN[sp.id]));
   const scarf=st>=3&&eq.back!=='bag'&&!eq.neck&&!mech?`<path class="p-scarf" d="M56 140 Q100 158 144 140 L144 150 Q100 168 56 150 Z"/>`:'';
   const eyes=m==='sad'?`<path class="p-mouth" d="M70 96 q8 -6 16 0"/><path class="p-mouth" d="M114 96 q8 -6 16 0"/>`:m==='sleep'?`<path class="p-mouth" d="M70 94 q8 6 16 0"/><path class="p-mouth" d="M114 94 q8 6 16 0"/>`:
     `<g class="eyes"><circle class="p-eye" cx="78" cy="96" r="9"/><circle class="p-eye" cx="122" cy="96" r="9"/><circle class="p-shine" cx="81" cy="92" r="3"/><circle class="p-shine" cx="125" cy="92" r="3"/></g>`;
   const back=(eq.back==='cape'||eq.back==='rainbow'||eq.back==='angel'?WEAR[eq.back]:'')+(mech?mechSVG(mech,'back'):'');
   return `<ellipse class="p-shadow" cx="100" cy="186" rx="${56*sc}" ry="8"/>
     <g class="bob" ${o.id?'id="petG"':''}><g transform="translate(100 182) scale(${sc}) translate(-100 -182)">
-    ${back}${ears}<ellipse style="${bs}" cx="100" cy="112" rx="64" ry="66"/>${sk&&sk.pat?`<clipPath id="pclip${o.id?'m':''}"><ellipse cx="100" cy="112" rx="64" ry="66"/></clipPath><g clip-path="url(#pclip${o.id?'m':''})">${skinPat(sk.pat)}</g>`:''}<ellipse style="fill:${spc.belly}" cx="100" cy="134" rx="38" ry="34"/>
+    ${back}${ears}<ellipse style="${bs}" ${BODY}/>${sk&&sk.pat?`<clipPath id="pclip${o.id?'m':''}"><ellipse ${BODY}/></clipPath><g clip-path="url(#pclip${o.id?'m':''})">${skinPat(sk.pat)}</g>`:''}<ellipse style="fill:${spc.belly}" cx="100" cy="134" rx="38" ry="34"/>
     <ellipse style="${bs}" cx="70" cy="178" rx="16" ry="8"/><ellipse style="${bs}" cx="130" cy="178" rx="16" ry="8"/>
     ${eyes}<circle class="p-cheek" cx="64" cy="114" r="9"/><circle class="p-cheek" cx="136" cy="114" r="9"/>
     <path class="p-mouth" d="${mouth}"/>${scarf}${eq.neck&&WEAR[eq.neck]&&eq.neck!=='headset'?WEAR[eq.neck]:''}${mech?mechSVG(mech,'body',false,!!eq.arm):''}${eq.arm&&WEAR[eq.arm]?WEAR[eq.arm]:''}${eq.face?WEAR[eq.face]:''}${mech?mechSVG(mech,'visor'):''}${eq.back==='bag'?WEAR.bag:''}${head}${eq.neck==='headset'&&!eq.helm?WEAR.headset:''}${eq.helm&&WEAR[eq.helm]?WEAR[eq.helm]:''}${eq.weapon&&WEAR[eq.weapon]?WEAR[eq.weapon]:''}</g>${m==='sleep'?'<g class="zzz"><text x="150" y="60">z</text><text x="166" y="40">z</text><text x="182" y="20">Z</text></g>':''}</g>`;
@@ -2125,7 +2142,7 @@ function sceneSVG(){
   const room=['window','lights','shelf','plant','bed','trophy'].filter(on).map(id=>id==='lights'?lightsSVG():ROOM[id]).join('');
   return `<svg class="scene" viewBox="0 0 400 250" role="img" aria-label="${esc(S.pet.name)}的小屋">
     <rect class="r-wall" x="0" y="0" width="400" height="186"/><rect class="r-floor" x="0" y="186" width="400" height="64"/><path class="r-line" d="M0 186 H400"/>
-    ${room}${on('rug')?ROOM.rug:''}<g transform="translate(110 22) scale(.92)"><g class="${stage()>0&&mood()!=='sleep'?'wander':''}" id="petHit" style="cursor:pointer">${petInner({sp:S.pet.sp,st:stage(),mood:mood(),lvl:level(),xp:S.pet.xp,eq:S.equip,id:1})}</g></g></svg>`;
+    ${room}${on('rug')?ROOM.rug:''}<g transform="translate(110 22) scale(.92)"><g class="${stage()>0&&mood()!=='sleep'?'wander':''}" id="petHit" style="cursor:pointer">${petInner({sp:stage()>0?curLook():S.pet.sp,st:stage(),mood:mood(),lvl:level(),xp:S.pet.xp,eq:S.equip,id:1})}</g></g></svg>`;
 }
 function miniPet(sp,cls=''){return `<svg viewBox="-10 -20 220 216" class="minipet ${cls}" aria-hidden="true">${petInner({sp,st:3,mood:'happy',lvl:1,eq:{}})}</svg>`}
 
@@ -2262,11 +2279,17 @@ function bindTalk(){
   });
 }
 
+function charShopHTML(){const own=S.chars||['egg_milk'],cur=curLook();
+  const card=(id,name,sub,act)=>`<div class="sitem ${id===cur?'own':''}">${miniPet(id)}<b>${esc(name)}</b><span class="hint" style="margin:0">${sub}</span>${act}</div>`;
+  const use=id=>id===cur?'<span class="tag2 m">使用中</span>':`<button class="btn small go" data-look="${id}">换成它</button>`;
+  return `<p class="hint" style="margin:0 0 8px">换个样子陪你学习！装备（机甲、头盔、武器…）换了角色也照样穿着。成长和毕业还是按${esc(S.pet.name)}来算。</p>
+   <div class="secl">我的豆豆</div><div class="shop">${card(S.pet.sp,S.pet.name,'本来的样子',use(S.pet.sp))}${(S.dex||[]).filter(d=>d.sp!==S.pet.sp).map(d=>card(d.sp,d.name,'已毕业',use(d.sp))).join('')}</div>
+   <div class="secl">壳壳一家</div><div class="shop">${CHARS.map(c=>own.includes(c.id)?card(c.id,c.name,'已解锁',use(c.id)):card(c.id,c.name,c.lv&&level()<c.lv?`Lv.${c.lv} 解锁`:'可以解锁',c.lv&&level()<c.lv?`<span class="tag2">🔒 🍎${c.price}</span>`:`<button class="btn small sun" data-buychar="${c.id}" ${S.food<c.price?'disabled':''}>🍎 ${c.price}</button>`)).join('')}</div>`}
 function shopHTML(){
   const egg=stage()===0;
-  const cnt=sl=>ITEMS.filter(i=>i.slot===sl&&S.owned.includes(i.id)).length+'/'+ITEMS.filter(i=>i.slot===sl).length;
+  const cnt=sl=>sl==='char'?(S.chars||['egg_milk']).length+'/'+CHARS.length:ITEMS.filter(i=>i.slot===sl&&S.owned.includes(i.id)).length+'/'+ITEMS.filter(i=>i.slot===sl).length;
   return (egg?'<p class="hint" style="margin:0 0 8px">衣服可以先买好，孵出来就能穿上。</p>':'')+`<div class="scats">${SLOTS.map(([sl,lb])=>`<button class="scat ${sl===shopCat?'on':''}" data-scat="${sl}">${lb}<small>${cnt(sl)}</small></button>`).join('')}</div>`
-    +SLOTS.filter(([slot])=>slot===shopCat).map(([slot,label])=>`
+    +(shopCat==='char'?charShopHTML():'')+SLOTS.filter(([slot])=>slot===shopCat&&slot!=='char').map(([slot,label])=>`
     <div class="shop">${ITEMS.filter(i=>i.slot===slot).map(it=>{const own=S.owned.includes(it.id);let act;
       if(!own)act=it.badge?`<span class="tag2">🔒 ${BADGES.find(b=>b.id===it.badge).name}徽章</span>`:it.lv&&level()<it.lv?`<span class="tag2">🔒 Lv.${it.lv} 解锁 · 🍎${it.price}</span>`:`<button class="btn small sun" data-buy="${it.id}" ${S.food<it.price?'disabled':''}>🍎 ${it.price}</button>`;
       else if(slot==='room')act=`<button class="btn small" data-room="${it.id}">${S.roomOff.includes(it.id)?'摆出来':'收起来'}</button>`;
@@ -2298,7 +2321,7 @@ function renderPet(){
      <div><div class="mlabel">心情<span>${joy}%</span></div><div class="meter"><i id="joyBar" style="width:${joy}%;background:var(--coral)"></i></div></div>
      <div><div class="mlabel">饱腹度<span>${Math.round(p.hunger)}%</span></div><div class="meter"><i style="width:${p.hunger}%;background:${hc}"></i></div></div>
      <div class="row center"><button class="btn sun" id="feed">🍎 喂苹果（剩 ${S.food} 个）</button><button class="btn" id="patBtn">✋ 摸摸头</button></div>
-     <div class="row center"><button class="btn go" id="gameBtn" ${stage()===0?'disabled':''}>🎮 陪${esc(p.name)}玩接苹果 · 第 ${S.catchLv||1} 关（${GC} 🍎）</button></div>
+     <div class="row center" style="gap:8px"><button class="btn go" id="gameBtn" ${stage()===0?'disabled':''}>${todayDone()?'':'🔒 '}🍎 接苹果 · 第 ${S.catchLv||1} 关</button><button class="btn sun" id="runBtn" ${stage()===0?'disabled':''}>${todayDone()?'':'🔒 '}🏃 闯关跑酷 · 第 ${S.runLv||1} 关</button></div><p class="hint center" style="margin:4px 0 0">${todayDone()?`每个游戏玩一次 ${GC} 🍎`:'🔒 完成今天的打卡任务后才能玩游戏'} · 想换角色去商店「👤 角色」</p>
      <p class="hint center" style="margin:0">摸头 1 🍎 · 玩游戏 ${GC} 🍎（会消耗饱腹度）· 苹果靠完成今日任务、和${esc(p.name)}聊天来赚</p>
      <p class="hint center" style="margin:0">点小屋里的${esc(p.name)}，每天会有一个小惊喜；商店买礼物会让它心情变好</p>
      ${canGrad?`<div class="help center">${esc(p.name)}已经长成大王啦！毕业后它会住进图鉴，你会得到一颗新蛋，孵出新的豆豆伙伴。买过的衣服和家具都会保留。
@@ -2311,7 +2334,7 @@ function renderPet(){
    </div></div>`;
   $('#petName').onchange=e=>{p.name=e.target.value.trim()||spOf(p.sp).name;save()};
   $('#feed').onclick=feed;
-  $('#patBtn').onclick=patPet;$('#gameBtn').onclick=playCatch;const ph=$('#petHit');if(ph)ph.addEventListener('click',tapPet);
+  $('#patBtn').onclick=patPet;$('#gameBtn').onclick=playCatch;$('#runBtn').onclick=playRun;const ph=$('#petHit');if(ph)ph.addEventListener('click',tapPet);
   const gb=$('#gradBtn');if(gb)gb.onclick=()=>{if(!gradArmed){gradArmed=true;return renderPet()}graduate()};
   bindTalk();
 }
@@ -2363,8 +2386,53 @@ function tapPet(){
 }
 /* 小游戏：接苹果，每天 3 次 */
 const GAME_COST=3;
+/* 小游戏 2：闯关跑酷。点屏幕跳（空中还能再跳一次），躲开障碍、吃苹果，跑完 30 秒且分数够就过关；关数越高越快、障碍越多 */
+/* 游戏要等今天的打卡任务完成后才能玩 */
+const todayDone=()=>(S.history||[]).some(h=>h.date===today())||!!(S.day&&S.day.done&&S.day.date===today());
+function gameLocked(){if(todayDone())return false;beep('bad');setBubble('先完成今天的打卡任务，再来陪我玩游戏吧！');toast('完成今日任务后才能玩游戏哦');return true}
+function playRun(){
+  const p=S.pet,name=esc(p.name);if(stage()===0)return toast('孵出来才能玩游戏哦');if(gameLocked())return;
+  if(petNight())return setBubble('呼…呼…太晚了，明天再陪我玩吧');
+  if(S.food<GAME_COST){beep('bad');return setBubble(`玩一次要 ${GAME_COST} 个苹果，去做今日任务赚苹果吧！`)}
+  if(p.hunger<20){beep('bad');return setBubble('我太饿了，跑不动…先喂我吃个苹果吧')}
+  S.food-=GAME_COST;save();hud();
+  const lv=S.runLv||1,target=Math.min(50,6+3*(lv-1)),spd=260*(1+.1*(lv-1)),gapMin=Math.max(.75,1.6-.08*(lv-1)),dur=30;
+  const ov=document.createElement('div');ov.className='gameov';
+  ov.innerHTML=`<div class="gtop"><span>第 <b>${lv}</b> 关</span><span>🍎 <b id="rScore">0</b> / ${target}</span><span id="rHp">❤️❤️❤️</span><span>⏱ <b id="rTime">${dur}</b></span><button class="btn small" id="rQuit">结束</button></div>
+    <div class="garea runarea" id="rarea"><div class="rground"></div><div class="gpet" id="rpet">${miniPet(curLook(),'')}</div></div>
+    <p class="ghint">点一下屏幕跳起来，在空中再点一下能跳更高。躲开障碍，吃到 🍎 加分${lv>=3?'，⭐ 加 3 分':''}。撞到 3 次就结束。</p>`;
+  document.body.appendChild(ov);
+  const area=$('#rarea'),pet=$('#rpet');const W=area.clientWidth,H=area.clientHeight,G=H-40,PX=Math.min(90,W*.2);
+  let y=0,vy=0,jumps=0,score=0,hp=3,inv=0,t0=performance.now(),lt=0,run=true,objs=[],nextOb=1.2,nextFood=.6,el=0;
+  const jump=e=>{if(e)e.preventDefault();if(!run)return;if(jumps<2){vy=jumps?560:640;jumps++;beep('pop')}};
+  area.addEventListener('pointerdown',jump);const key=e=>{if(e.code==='Space'||e.key===' '){jump(e)}};document.addEventListener('keydown',key);
+  const OBS=lv>=5?['🧱','🌵','🪨','🔥','🌀']:lv>=3?['🧱','🌵','🪨','🌀']:['🧱','🌵','🪨'];
+  function spawn(k,yy){const d=document.createElement('div');d.className='gitem';d.textContent=k;area.appendChild(d);objs.push({el:d,k,x:W+30,y:yy,ph:Math.random()*6})}
+  function frame(now){if(!run)return;const dt=Math.min(.05,(now-(lt||now))/1000);lt=now;el=(now-t0)/1000;
+    const left=dur-el;$('#rTime').textContent=Math.max(0,Math.ceil(left));if(left<=0)return end(true);
+    vy-=1800*dt;y+=vy*dt;if(y<=0){y=0;vy=0;jumps=0}
+    pet.style.transform=`translate(${PX-42}px,${G-84-y}px)`;pet.style.opacity=inv>0&&Math.floor(now/100)%2?'.4':'1';if(inv>0)inv-=dt;
+    nextOb-=dt;if(nextOb<=0){const k=OBS[Math.random()*OBS.length|0];spawn(k,0);if(lv>=4&&Math.random()<.3)spawn(OBS[Math.random()*OBS.length|0],0),objs[objs.length-1].x+=38;nextOb=gapMin+Math.random()*1.1}
+    nextFood-=dt;if(nextFood<=0){spawn(lv>=3&&Math.random()<.18?'⭐':'🍎',60+Math.random()*120);nextFood=.7+Math.random()*1.2}
+    const v=spd+el*4;
+    for(const o of objs.slice()){o.x-=v*dt;let oy=o.y;if(o.k==='🌀')oy=20+Math.abs(Math.sin(el*3+o.ph))*90;
+      o.el.style.transform=`translate(${o.x-16}px,${G-34-oy}px)`;
+      const hit=Math.abs(o.x-PX)<28&&Math.abs(oy+16-(y+38))<(o.k==='🍎'||o.k==='⭐'?40:30);
+      if(hit){if(o.k==='🍎'||o.k==='⭐'){score+=o.k==='⭐'?3:1;beep('ok');$('#rScore').textContent=score;o.el.remove();objs.splice(objs.indexOf(o),1);continue}
+        if(inv<=0){hp--;inv=1.2;beep('bad');area.classList.add('shake');setTimeout(()=>area.classList.remove('shake'),400);$('#rHp').textContent='❤️'.repeat(hp)+'🤍'.repeat(3-hp);if(hp<=0)return end(false)}}
+      if(o.x<-40){o.el.remove();objs.splice(objs.indexOf(o),1)}}
+    requestAnimationFrame(frame)}
+  function end(timeUp){if(!run)return;run=false;document.removeEventListener('keydown',key);
+    const pass=timeUp&&score>=target,xp=Math.min(80,score*3+(pass?10:0));p.joy=Math.min(100,(p.joy??60)+25);p.hunger=Math.max(0,p.hunger-15);
+    if(pass){S.runLv=lv+1;S.food+=2;hud()}const m=applyXp(xp);save();beep(pass?'win':'ok');
+    area.innerHTML=`<div class="gend"><div class="ptitle">${pass?`🎉 第 ${lv} 关通过！`:hp<=0?'撞到 3 次啦，再来一次！':`拿到 ${score} 分，差一点！`}</div>
+      <p>${pass?`奖励 2 个苹果。下一关目标 ${Math.min(50,6+3*lv)} 分，会跑得更快哦！`:`过关要跑完 ${dur} 秒，并拿到 ${target} 分。`}</p>
+      <p>${name}获得 ${xp} 成长值，心情 +25，跑累了饱腹度 -15</p>${m?`<p><b>${esc(m)}</b></p>`:''}<button class="btn go" id="rOk">好的</button></div>`;
+    $('#rOk').onclick=()=>{ov.remove();bubbleText=m||'跑得好开心！再陪我跑一次吧～';renderPet()}}
+  $('#rQuit').onclick=()=>end(false);requestAnimationFrame(frame);
+}
 function playCatch(){
-  const p=S.pet,name=esc(p.name);if(stage()===0)return toast('孵出来才能玩游戏哦');
+  const p=S.pet,name=esc(p.name);if(stage()===0)return toast('孵出来才能玩游戏哦');if(gameLocked())return;
   const td=today();if(S.gameDay!==td){S.gameDay=td;S.gameN=0}
   if(petNight())return setBubble('呼…呼…太晚了，明天再陪我玩吧');
   if(S.food<GAME_COST){beep('bad');return setBubble(`玩一次要 ${GAME_COST} 个苹果，去和我聊天或者做今日任务赚苹果吧！`)}
@@ -2374,7 +2442,7 @@ function playCatch(){
   const lv=S.catchLv||1,target=Math.min(60,8+4*(lv-1)),spd=1+.12*(lv-1),bugP=Math.min(.38,.18+.03*(lv-1)),bombP=lv>=3?Math.min(.1,.03+.01*(lv-3)):0,zig=lv>=5;
   const ov=document.createElement('div');ov.className='gameov';
   ov.innerHTML=`<div class="gtop"><span>第 <b>${lv}</b> 关</span><span>🍎 <b id="gScore">0</b> / ${target}</span><span>⏱ <b id="gTime">25</b></span><button class="btn small" id="gQuit">结束</button></div>
-    <div class="garea" id="garea"><div class="gpet" id="gpet">${miniPet(p.sp,'')}</div></div>
+    <div class="garea" id="garea"><div class="gpet" id="gpet">${miniPet(curLook(),'')}</div></div>
     <p class="ghint">左右拖动，让${name}接住 🍎（⭐ 加 3 分），躲开 🐛${bombP?' 和 💣（扣 5 分）':''}。25 秒内拿到 ${target} 分就过关！</p>`;
   document.body.appendChild(ov);
   const area=$('#garea'),pet=$('#gpet');let W=area.clientWidth,H=area.clientHeight,px=W/2,score=0,t0=performance.now(),items=[],last=0,run=true,lt=0;
@@ -2412,6 +2480,9 @@ function petClick(e){
   const b=e.target.closest('[data-buy]');if(b){const it=ITEMS.find(i=>i.id===b.dataset.buy);if(S.food<it.price||(it.lv&&level()<it.lv))return true;
     S.food-=it.price;S.owned.push(it.id);if(it.slot!=='room'&&stage()>0)S.equip[it.slot]=it.id;S.pet.joy=Math.min(100,(S.pet.joy??60)+15);save();hud();beep('win');
     bubbleText=(it.slot==='room'?'哇，新家具！谢谢你！':it.slot==='weapon'?'我拿到'+it.name+'啦，看招！':it.slot==='mech'?'机甲启动！'+it.name+'，出发！':it.slot==='skin'?'我换上'+it.name+'啦，帅不帅？':'我穿上新'+it.name+'啦，好看吗？')+'（心情 +15）';renderPet();setTimeout(()=>petFx('💖',3),50);return true}
+  const lk=e.target.closest('[data-look]');if(lk){S.look=lk.dataset.look===S.pet.sp?null:lk.dataset.look;save();beep('pop');bubbleText='换好啦！我现在是'+spOf(curLook()).name+'的样子～';renderPet();return true}
+  const bc=e.target.closest('[data-buychar]');if(bc){const c=CHARS.find(x=>x.id===bc.dataset.buychar);if(!c||S.food<c.price||(c.lv&&level()<c.lv))return true;
+    S.food-=c.price;S.chars=(S.chars||['egg_milk']).concat(c.id);S.look=c.id;save();hud();beep('win');bubbleText='解锁了'+c.name+'！我变身啦～';renderPet();setTimeout(()=>petFx('✨',4),50);return true}
   const w=e.target.closest('[data-wear]');if(w){const it=ITEMS.find(i=>i.id===w.dataset.wear);S.equip[it.slot]=S.equip[it.slot]===it.id?null:it.id;save();beep('pop');renderPet();return true}
   const r=e.target.closest('[data-room]');if(r){const id=r.dataset.room;S.roomOff=S.roomOff.includes(id)?S.roomOff.filter(x=>x!==id):S.roomOff.concat(id);save();beep('pop');renderPet();return true}
   return false;
