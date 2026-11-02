@@ -118,6 +118,13 @@ select{font:inherit;font-weight:700;padding:8px 12px;border-radius:12px;border:2
 .bad{animation:shake .4s}
 
 .garea.shake{animation:shake .4s}
+.rbuff{position:absolute;right:10px;top:8px;font-size:22px;font-weight:800}.gpet.shielded svg{filter:drop-shadow(0 0 8px #4AA8E8)}
+.bprompt{display:flex;align-items:center;justify-content:center;gap:10px;margin:6px 0;font-size:28px;font-weight:800;font-family:var(--f-zh)}
+.garea.bubarea{background:linear-gradient(#E8F6FF,#CDEBFF)}
+.bub{position:absolute;left:0;top:0;border-radius:50%;border:3px solid #ffffffcc;font-family:var(--f-display);font-weight:800;font-size:19px;color:#23314d;box-shadow:0 4px 10px #0002;will-change:transform;padding:4px;line-height:1.1;overflow-wrap:anywhere}
+.bub.popok{animation:bpop .35s forwards;color:#2e9e5b}@keyframes bpop{to{scale:1.6;opacity:0}}
+.bub.popbad{background:#ccc!important;filter:grayscale(1)}
+.gpet.cheer{animation:jump .5s}
 .garea.runarea{background:linear-gradient(#BFE6FF 0%,#E8F7FF 75%,#CFEFC4 75%)}.rground{position:absolute;left:0;right:0;bottom:0;height:40px;background:repeating-linear-gradient(90deg,#8BC97A 0 30px,#7DBB6C 30px 60px)}
 .garea.runarea .gpet{position:absolute;left:0;top:0;bottom:auto;width:84px}.garea.runarea .gitem{font-size:34px}
 .scats{display:flex;gap:6px;overflow-x:auto;padding:2px 0 10px;-webkit-overflow-scrolling:touch}.scat{flex:none;padding:8px 12px;border-radius:999px;border:2px solid var(--line);background:var(--surface);font-weight:700;font-size:15px;display:flex;gap:4px;align-items:center}.scat small{font-size:11px;opacity:.6}.scat.on{background:var(--leaf);color:#fff;border-color:var(--leaf)}
@@ -1363,36 +1370,40 @@ function speakBoxHTML(){return `<div class="speakbox">
   <form class="row" id="sayForm" style="flex-wrap:nowrap;margin-top:10px"><input type="text" id="sayIn" autocomplete="off" autocapitalize="sentences" placeholder="${srOK?'说的话会出现在这里，也可以打字':'点这里，用键盘上的 🎤 说英语'}"><button class="btn go">提交</button></form>
   <p class="hint" id="kbTip" style="margin:6px 0 0" ${srOK?'hidden':''}>点输入框，切换到英文键盘，再点键盘上的 🎤 说话，说完点「提交」。想用「按住说话」，要用 Safari 打开网址版。</p>
   <div id="sayFb" class="sayfb" hidden></div></div>`}
-function bindSpeakBox(onSubmit){
-  const inp=$('#sayIn'),mic=$('#micBtn');let rec=null,txt='';
-  const off=()=>{if(mic)mic.hidden=true;const h=$('#holdTip');if(h)h.hidden=true;const t=$('#kbTip');if(t)t.hidden=false;inp.placeholder='点这里，用键盘上的 🎤 说英语'};
+/* root：只操作这一题自己的输入框和按钮（以前用全局查找，上一题迟到的识别结果会写到下一题上，把下一题卡住） */
+function bindSpeakBox(onSubmit,root){root=root||document;const q=sel=>root.querySelector(sel);
+  const inp=q('#sayIn'),mic=q('#micBtn');let rec=null,txt='';
+  const off=()=>{if(mic)mic.hidden=true;const h=q('#holdTip');if(h)h.hidden=true;const t=q('#kbTip');if(t)t.hidden=false;inp.placeholder='点这里，用键盘上的 🎤 说英语'};
   if(mic){
     const start=()=>{try{hush()}catch(_){}txt='';inp.value='';
-      rec=listen(t=>{txt=t;inp.value=t},()=>{rec=null;mic.classList.remove('on');mic.textContent='🎤 点一下开始说';if(!srOK)return off();
+      rec=listen(t=>{txt=t;inp.value=t},()=>{rec=null;if(!inp.isConnected)return;mic.classList.remove('on');mic.textContent='🎤 点一下开始说';if(!srOK)return off();
         if(txt.trim())onSubmit(txt.trim());else toast('没听清，再点一下说一次')},true);
       if(rec){mic.classList.add('on');mic.textContent='● 正在听… 说完点这里';beep('pop')}else off()};
     const stop=()=>{const r=rec;if(!r)return;mic.textContent='好的，正在识别…';setTimeout(()=>{try{r.stop()}catch(_){}},250);setTimeout(()=>r._finish&&r._finish(),2500)};
     mic.onclick=e=>{e.preventDefault();if(rec)stop();else start()};
   }
   inp.addEventListener('input',()=>{ALTS=[]});
-  $('#sayForm').onsubmit=e=>{e.preventDefault();const v=inp.value.trim();if(v)onSubmit(v)};
+  q('#sayForm').onsubmit=e=>{e.preventDefault();const v=inp.value.trim();if(v)onSubmit(v)};
+  return {stop:()=>{const r=rec;rec=null;if(r)try{r.abort()}catch(_){}}};
 }
 /* 说一句话的题目：说对才继续；连错两次可以跳过。返回是否第一次就说对 */
 function speakTask(ctx,ui,html,jo){return new Promise(res=>{
-  if(!alive(ctx))return;let tries=0,busy=false;const refs=jo.refs.slice();
+  if(!alive(ctx))return;let tries=0,busy=false,over=false;const refs=jo.refs.slice();
   ui.body.innerHTML=`<div class="card prompt">${html}</div><div style="height:12px"></div>${speakBoxHTML()}`;
-  ui.body.querySelectorAll('[data-sayline]').forEach(b=>b.onclick=()=>say(b.dataset.sayline));
-  bindSpeakBox(async said=>{
-    if(busy)return;busy=true;const fb=$('#sayFb');fb.hidden=false;fb.className='sayfb';fb.textContent='正在听你说得对不对…';
-    const r=await judgeSpeech({...jo,refs,said});if(!alive(ctx))return;busy=false;
+  const root=ui.body,fb=root.querySelector('#sayFb'),inp=root.querySelector('#sayIn');
+  root.querySelectorAll('[data-sayline]').forEach(b=>b.onclick=()=>say(b.dataset.sayline));
+  const finish=v=>{if(over)return;over=true;box.stop();res(v)};
+  const box=bindSpeakBox(async said=>{
+    if(busy||over||!fb.isConnected)return;busy=true;fb.hidden=false;fb.className='sayfb';fb.textContent='正在听你说得对不对…';
+    const r=await judgeSpeech({...jo,refs,said});if(!alive(ctx)||over||!fb.isConnected)return;busy=false;
     if(r.ok){beep('ok');fb.className='sayfb ok';fb.innerHTML=`✓ 说得好！<b>${esc(r.fixed)}</b>`;say(r.fixed);if(tries===0)good(ctx,fb);
-      $('#sayIn').disabled=true;const m=$('#micBtn');if(m)m.disabled=true;setTimeout(()=>res(tries===0),1800)}
+      inp.disabled=true;const m=root.querySelector('#micBtn');if(m)m.disabled=true;setTimeout(()=>finish(tries===0),1800)}
     else{tries++;beep('bad');refs.unshift(r.fixed);fb.className='sayfb no';
       fb.innerHTML=`你说的是：${esc(said)}<br>更好的说法：<b>${esc(r.fixed)}</b> <button class="btn small" data-sayline="${esc(r.fixed)}" type="button">🔊</button>${r.tip?`<br><small>${esc(r.tip)}</small>`:''}
         <br>${tries>=2?'<button class="btn small sun" id="skipT" type="button">下一题</button>':'跟着再说一遍吧！'}`;
-      fb.querySelector('[data-sayline]').onclick=()=>say(r.fixed);say(r.fixed);$('#sayIn').value='';
-      const sk=$('#skipT');if(sk)sk.onclick=()=>res(false)}
-  });
+      fb.querySelector('[data-sayline]').onclick=()=>say(r.fixed);say(r.fixed);inp.value='';
+      const sk=fb.querySelector('#skipT');if(sk)sk.onclick=()=>finish(false)}
+  },root);
 })}
 
 /* ---------- 图片识别（导入用） ---------- */
@@ -2321,7 +2332,7 @@ function renderPet(){
      <div><div class="mlabel">心情<span>${joy}%</span></div><div class="meter"><i id="joyBar" style="width:${joy}%;background:var(--coral)"></i></div></div>
      <div><div class="mlabel">饱腹度<span>${Math.round(p.hunger)}%</span></div><div class="meter"><i style="width:${p.hunger}%;background:${hc}"></i></div></div>
      <div class="row center"><button class="btn sun" id="feed">🍎 喂苹果（剩 ${S.food} 个）</button><button class="btn" id="patBtn">✋ 摸摸头</button></div>
-     <div class="row center" style="gap:8px"><button class="btn go" id="gameBtn" ${stage()===0?'disabled':''}>${todayDone()?'':'🔒 '}🍎 接苹果 · 第 ${S.catchLv||1} 关</button><button class="btn sun" id="runBtn" ${stage()===0?'disabled':''}>${todayDone()?'':'🔒 '}🏃 闯关跑酷 · 第 ${S.runLv||1} 关</button></div><p class="hint center" style="margin:4px 0 0">${todayDone()?`每个游戏玩一次 ${GC} 🍎`:'🔒 完成今天的打卡任务后才能玩游戏'} · 想换角色去商店「👤 角色」</p>
+     <div class="row center" style="gap:8px"><button class="btn go" id="gameBtn" ${stage()===0?'disabled':''}>${todayDone()?'':'🔒 '}🍎 接苹果 · 第 ${S.catchLv||1} 关</button><button class="btn sun" id="runBtn" ${stage()===0?'disabled':''}>${todayDone()?'':'🔒 '}🏃 闯关跑酷 · 第 ${S.runLv||1} 关</button><button class="btn" id="bubBtn" ${stage()===0?'disabled':''}>${todayDone()?'':'🔒 '}🫧 单词泡泡 · 第 ${S.bubLv||1} 关</button></div><p class="hint center" style="margin:4px 0 0">${todayDone()?`每个游戏玩一次 ${GC} 🍎，游戏不奖励苹果`:'🔒 完成今天的打卡任务后才能玩游戏'} · 想换角色去商店「👤 角色」</p>
      <p class="hint center" style="margin:0">摸头 1 🍎 · 玩游戏 ${GC} 🍎（会消耗饱腹度）· 苹果靠完成今日任务、和${esc(p.name)}聊天来赚</p>
      <p class="hint center" style="margin:0">点小屋里的${esc(p.name)}，每天会有一个小惊喜；商店买礼物会让它心情变好</p>
      ${canGrad?`<div class="help center">${esc(p.name)}已经长成大王啦！毕业后它会住进图鉴，你会得到一颗新蛋，孵出新的豆豆伙伴。买过的衣服和家具都会保留。
@@ -2334,7 +2345,7 @@ function renderPet(){
    </div></div>`;
   $('#petName').onchange=e=>{p.name=e.target.value.trim()||spOf(p.sp).name;save()};
   $('#feed').onclick=feed;
-  $('#patBtn').onclick=patPet;$('#gameBtn').onclick=playCatch;$('#runBtn').onclick=playRun;const ph=$('#petHit');if(ph)ph.addEventListener('click',tapPet);
+  $('#patBtn').onclick=patPet;$('#gameBtn').onclick=playCatch;$('#runBtn').onclick=playRun;$('#bubBtn').onclick=playBubble;const ph=$('#petHit');if(ph)ph.addEventListener('click',tapPet);
   const gb=$('#gradBtn');if(gb)gb.onclick=()=>{if(!gradArmed){gradArmed=true;return renderPet()}graduate()};
   bindTalk();
 }
@@ -2390,47 +2401,102 @@ const GAME_COST=3;
 /* 游戏要等今天的打卡任务完成后才能玩 */
 const todayDone=()=>(S.history||[]).some(h=>h.date===today())||!!(S.day&&S.day.done&&S.day.date===today());
 function gameLocked(){if(todayDone())return false;beep('bad');setBubble('先完成今天的打卡任务，再来陪我玩游戏吧！');toast('完成今日任务后才能玩游戏哦');return true}
+/* 游戏里的角色：就是你养的宠物，穿着买的装备 */
+const gamePet=()=>`<svg viewBox="-10 -20 220 216" class="minipet" aria-hidden="true">${petInner({sp:S.pet.sp,st:Math.max(1,stage()),mood:'happy',lvl:level(),eq:S.equip})}</svg>`;
+function gameStart(){const p=S.pet;if(stage()===0){toast('孵出来才能玩游戏哦');return false}if(gameLocked())return false;
+  if(petNight()){setBubble('呼…呼…太晚了，明天再陪我玩吧');return false}
+  if(S.food<GAME_COST){beep('bad');setBubble(`玩一次要 ${GAME_COST} 个苹果，去做今日任务赚苹果吧！`);return false}
+  if(p.hunger<20){beep('bad');setBubble('我太饿了，跑不动…先喂我吃个苹果吧');return false}
+  S.food-=GAME_COST;save();hud();return true}
+const starsOf=(score,t)=>score>=t*2?3:score>=t*1.5?2:score>=t?1:0;
+function gameEnd(area,ov,o){const p=S.pet,name=esc(p.name),st=o.stars,xp=Math.min(80,o.score*3+st*5);
+  p.joy=Math.min(100,(p.joy??60)+25);p.hunger=Math.max(0,p.hunger-15);if(st){S[o.key]=o.lv+1}
+  const m=applyXp(xp);save();beep(st?'win':'ok');
+  area.innerHTML=`<div class="gend"><div class="ptitle">${st?`🎉 第 ${o.lv} 关通过！`:o.dead?'撞到 3 次啦，再来一次！':`拿到 ${o.score} 分，差一点！`}</div>
+    <div class="big">${'⭐'.repeat(st)}${'☆'.repeat(3-st)}</div>
+    <p>${st?`下次挑战第 ${o.lv+1} 关！`:`拿到 ${o.target} 分就能过关`}</p><p class="hint">游戏不奖励苹果，苹果要靠完成今日任务、阅读理解和对话来赚哦</p>
+    <p>${name}获得 ${xp} 成长值，心情 +25，饱腹度 -15</p>${m?`<p><b>${esc(m)}</b></p>`:''}<button class="btn go" id="gEndOk">好的</button></div>`;
+  area.querySelector('#gEndOk').onclick=()=>{ov.remove();bubbleText=m||'好好玩！明天做完任务再陪我玩吧～';renderPet()}}
+
+/* 闯关跑酷（新版）：每关换一个场景，速度只会慢慢变快、有上限；路上有道具：🧲 吸苹果、🛡️ 护盾、✨ 双倍 */
+const RUN_THEMES=[
+ {n:'草地',sky:'#BFE6FF',g1:'#8BC97A',g2:'#7DBB6C',obs:['🧱','🌵','🪨']},
+ {n:'沙漠',sky:'#FFE3A8',g1:'#E8C27A',g2:'#DDB56C',obs:['🌵','🦂','🪨']},
+ {n:'雪山',sky:'#DDEEFF',g1:'#FFFFFF',g2:'#EAF2FA',obs:['⛄','🧊','🌲']},
+ {n:'海边',sky:'#A8E3FF',g1:'#F5DFA6',g2:'#EDD396',obs:['🦀','🐚','🪸']},
+ {n:'糖果城',sky:'#FFD6EA',g1:'#FF9EC4',g2:'#FF8DB8',obs:['🍭','🧁','🍩']},
+ {n:'太空',sky:'#2B2F6B',g1:'#6B6FA8',g2:'#5E629A',obs:['☄️','👾','🛸']}];
 function playRun(){
-  const p=S.pet,name=esc(p.name);if(stage()===0)return toast('孵出来才能玩游戏哦');if(gameLocked())return;
-  if(petNight())return setBubble('呼…呼…太晚了，明天再陪我玩吧');
-  if(S.food<GAME_COST){beep('bad');return setBubble(`玩一次要 ${GAME_COST} 个苹果，去做今日任务赚苹果吧！`)}
-  if(p.hunger<20){beep('bad');return setBubble('我太饿了，跑不动…先喂我吃个苹果吧')}
-  S.food-=GAME_COST;save();hud();
-  const lv=S.runLv||1,target=Math.min(50,6+3*(lv-1)),spd=260*(1+.1*(lv-1)),gapMin=Math.max(.75,1.6-.08*(lv-1)),dur=30;
+  if(!gameStart())return;
+  const lv=S.runLv||1,th=RUN_THEMES[(lv-1)%RUN_THEMES.length],target=Math.min(30,8+2*(lv-1)),spd=230+Math.min(lv-1,6)*12,gapMin=Math.max(1,1.5-.05*(lv-1)),dur=40;
   const ov=document.createElement('div');ov.className='gameov';
-  ov.innerHTML=`<div class="gtop"><span>第 <b>${lv}</b> 关</span><span>🍎 <b id="rScore">0</b> / ${target}</span><span id="rHp">❤️❤️❤️</span><span>⏱ <b id="rTime">${dur}</b></span><button class="btn small" id="rQuit">结束</button></div>
-    <div class="garea runarea" id="rarea"><div class="rground"></div><div class="gpet" id="rpet">${miniPet(curLook(),'')}</div></div>
-    <p class="ghint">点一下屏幕跳起来，在空中再点一下能跳更高。躲开障碍，吃到 🍎 加分${lv>=3?'，⭐ 加 3 分':''}。撞到 3 次就结束。</p>`;
+  ov.innerHTML=`<div class="gtop"><span>第 <b>${lv}</b> 关 · ${th.n}</span><span>🍎 <b id="rScore">0</b>/${target}</span><span id="rHp">❤️❤️❤️</span><span>⏱<b id="rTime">${dur}</b></span><button class="btn small" id="rQuit">结束</button></div>
+    <div class="garea runarea" id="rarea" style="background:linear-gradient(${th.sky} 0%,${th.sky} 60%,#ffffff55 100%)"><div class="rground" style="background:repeating-linear-gradient(90deg,${th.g1} 0 30px,${th.g2} 30px 60px)"></div><div class="rbuff" id="rBuff"></div><div class="gpet" id="rpet">${gamePet()}</div></div>
+    <p class="ghint">点屏幕跳，空中再点一下跳更高。吃 🍎，躲开障碍；捡到 🧲 吸苹果、🛡️ 护盾、✨ 双倍分！</p>`;
   document.body.appendChild(ov);
-  const area=$('#rarea'),pet=$('#rpet');const W=area.clientWidth,H=area.clientHeight,G=H-40,PX=Math.min(90,W*.2);
-  let y=0,vy=0,jumps=0,score=0,hp=3,inv=0,t0=performance.now(),lt=0,run=true,objs=[],nextOb=1.2,nextFood=.6,el=0;
+  const area=ov.querySelector('#rarea'),pet=ov.querySelector('#rpet');const W=area.clientWidth,H=area.clientHeight,G=H-40,PX=Math.min(90,W*.2);
+  let y=0,vy=0,jumps=0,score=0,hp=3,inv=0,shield=0,mag=0,dbl=0,t0=performance.now(),lt=0,run=true,objs=[],nextOb=1.4,nextFood=.6,nextPow=5,el=0;
   const jump=e=>{if(e)e.preventDefault();if(!run)return;if(jumps<2){vy=jumps?560:640;jumps++;beep('pop')}};
-  area.addEventListener('pointerdown',jump);const key=e=>{if(e.code==='Space'||e.key===' '){jump(e)}};document.addEventListener('keydown',key);
-  const OBS=lv>=5?['🧱','🌵','🪨','🔥','🌀']:lv>=3?['🧱','🌵','🪨','🌀']:['🧱','🌵','🪨'];
-  function spawn(k,yy){const d=document.createElement('div');d.className='gitem';d.textContent=k;area.appendChild(d);objs.push({el:d,k,x:W+30,y:yy,ph:Math.random()*6})}
+  area.addEventListener('pointerdown',jump);const key=e=>{if(e.code==='Space'||e.key===' ')jump(e)};document.addEventListener('keydown',key);
+  function spawn(k,yy,type){const d=document.createElement('div');d.className='gitem';d.textContent=k;area.appendChild(d);objs.push({el:d,k,x:W+30,y:yy,type,ph:Math.random()*6})}
+  const buff=()=>{ov.querySelector('#rBuff').textContent=[shield?'🛡️':'',mag>0?'🧲':'',dbl>0?'✨×2':''].join(' ')};
   function frame(now){if(!run)return;const dt=Math.min(.05,(now-(lt||now))/1000);lt=now;el=(now-t0)/1000;
-    const left=dur-el;$('#rTime').textContent=Math.max(0,Math.ceil(left));if(left<=0)return end(true);
-    vy-=1800*dt;y+=vy*dt;if(y<=0){y=0;vy=0;jumps=0}
-    pet.style.transform=`translate(${PX-42}px,${G-84-y}px)`;pet.style.opacity=inv>0&&Math.floor(now/100)%2?'.4':'1';if(inv>0)inv-=dt;
-    nextOb-=dt;if(nextOb<=0){const k=OBS[Math.random()*OBS.length|0];spawn(k,0);if(lv>=4&&Math.random()<.3)spawn(OBS[Math.random()*OBS.length|0],0),objs[objs.length-1].x+=38;nextOb=gapMin+Math.random()*1.1}
-    nextFood-=dt;if(nextFood<=0){spawn(lv>=3&&Math.random()<.18?'⭐':'🍎',60+Math.random()*120);nextFood=.7+Math.random()*1.2}
-    const v=spd+el*4;
-    for(const o of objs.slice()){o.x-=v*dt;let oy=o.y;if(o.k==='🌀')oy=20+Math.abs(Math.sin(el*3+o.ph))*90;
-      o.el.style.transform=`translate(${o.x-16}px,${G-34-oy}px)`;
-      const hit=Math.abs(o.x-PX)<28&&Math.abs(oy+16-(y+38))<(o.k==='🍎'||o.k==='⭐'?40:30);
-      if(hit){if(o.k==='🍎'||o.k==='⭐'){score+=o.k==='⭐'?3:1;beep('ok');$('#rScore').textContent=score;o.el.remove();objs.splice(objs.indexOf(o),1);continue}
-        if(inv<=0){hp--;inv=1.2;beep('bad');area.classList.add('shake');setTimeout(()=>area.classList.remove('shake'),400);$('#rHp').textContent='❤️'.repeat(hp)+'🤍'.repeat(3-hp);if(hp<=0)return end(false)}}
+    const left=dur-el;ov.querySelector('#rTime').textContent=Math.max(0,Math.ceil(left));if(left<=0)return end(false);
+    vy-=1800*dt;y+=vy*dt;if(y<=0){y=0;vy=0;jumps=0}if(inv>0)inv-=dt;if(mag>0)mag-=dt;if(dbl>0)dbl-=dt;
+    pet.style.transform=`translate(${PX-42}px,${G-84-y}px)`;pet.style.opacity=inv>0&&Math.floor(now/100)%2?'.4':'1';pet.classList.toggle('shielded',!!shield);
+    nextOb-=dt;if(nextOb<=0){spawn(th.obs[Math.random()*th.obs.length|0],0,'ob');if(lv>=4&&Math.random()<.25){spawn(th.obs[Math.random()*th.obs.length|0],0,'ob');objs[objs.length-1].x+=40}nextOb=gapMin+Math.random()*1.2}
+    nextFood-=dt;if(nextFood<=0){const n=Math.random()<.35?3:1,hh=50+Math.random()*110;for(let i=0;i<n;i++){spawn('🍎',hh,'food');objs[objs.length-1].x+=i*36}nextFood=.9+Math.random()*1.1}
+    nextPow-=dt;if(nextPow<=0){spawn(['🧲','🛡️','✨'][Math.random()*3|0],80+Math.random()*80,'pow');nextPow=6+Math.random()*4}
+    const v=spd+Math.min(20,el*.6);
+    for(const o of objs.slice()){o.x-=v*dt;
+      if(o.type==='food'&&mag>0&&o.x<W*.8){o.x+=(PX-o.x)*Math.min(1,dt*5);o.y+=(y+30-o.y)*Math.min(1,dt*5)}
+      o.el.style.transform=`translate(${o.x-16}px,${G-34-o.y}px)`;
+      const near=Math.abs(o.x-PX)<28&&Math.abs(o.y+16-(y+38))<(o.type==='ob'?30:42);
+      if(near){if(o.type==='food'){score+=dbl>0?2:1;beep('ok');ov.querySelector('#rScore').textContent=score;o.el.remove();objs.splice(objs.indexOf(o),1);continue}
+        if(o.type==='pow'){if(o.k==='🧲')mag=8;else if(o.k==='🛡️')shield=1;else dbl=7;beep('win');buff();o.el.remove();objs.splice(objs.indexOf(o),1);continue}
+        if(inv<=0){if(shield){shield=0;inv=1;beep('pop');buff()}else{hp--;inv=1.2;beep('bad');area.classList.add('shake');setTimeout(()=>area.classList.remove('shake'),400);ov.querySelector('#rHp').textContent='❤️'.repeat(hp)+'🤍'.repeat(3-hp);if(hp<=0)return end(true)}}}
       if(o.x<-40){o.el.remove();objs.splice(objs.indexOf(o),1)}}
-    requestAnimationFrame(frame)}
-  function end(timeUp){if(!run)return;run=false;document.removeEventListener('keydown',key);
-    const pass=timeUp&&score>=target,xp=Math.min(80,score*3+(pass?10:0));p.joy=Math.min(100,(p.joy??60)+25);p.hunger=Math.max(0,p.hunger-15);
-    if(pass){S.runLv=lv+1;S.food+=2;hud()}const m=applyXp(xp);save();beep(pass?'win':'ok');
-    area.innerHTML=`<div class="gend"><div class="ptitle">${pass?`🎉 第 ${lv} 关通过！`:hp<=0?'撞到 3 次啦，再来一次！':`拿到 ${score} 分，差一点！`}</div>
-      <p>${pass?`奖励 2 个苹果。下一关目标 ${Math.min(50,6+3*lv)} 分，会跑得更快哦！`:`过关要跑完 ${dur} 秒，并拿到 ${target} 分。`}</p>
-      <p>${name}获得 ${xp} 成长值，心情 +25，跑累了饱腹度 -15</p>${m?`<p><b>${esc(m)}</b></p>`:''}<button class="btn go" id="rOk">好的</button></div>`;
-    $('#rOk').onclick=()=>{ov.remove();bubbleText=m||'跑得好开心！再陪我跑一次吧～';renderPet()}}
-  $('#rQuit').onclick=()=>end(false);requestAnimationFrame(frame);
+    buff();requestAnimationFrame(frame)}
+  function end(dead){if(!run)return;run=false;document.removeEventListener('keydown',key);gameEnd(area,ov,{key:'runLv',lv,score,target,stars:dead?0:starsOf(score,target),dead})}
+  ov.querySelector('#rQuit').onclick=()=>end(false);requestAnimationFrame(frame);
 }
+
+/* 单词泡泡：上面显示中文（也会读英文），从下往上飘的泡泡里有英文单词，点对的那个！用的是学过的词 */
+function playBubble(){
+  const pool0=learnedList().map(x=>x.it).concat(masteredList().map(x=>x.it));const pool=(pool0.length>=4?pool0:deck().items).filter(i=>i.en.length<=14);
+  if(pool.length<4)return toast('先多学几个单词再来玩吧');
+  if(!gameStart())return;
+  const lv=S.bubLv||1,target=Math.min(30,8+2*(lv-1)),dur=45,rise=55+Math.min(lv-1,6)*7,every=Math.max(.55,1.1-.06*(lv-1));
+  const ov=document.createElement('div');ov.className='gameov';
+  ov.innerHTML=`<div class="gtop"><span>第 <b>${lv}</b> 关</span><span>⭐ <b id="bScore">0</b>/${target}</span><span id="bCombo"></span><span>⏱<b id="bTime">${dur}</b></span><button class="btn small" id="bQuit">结束</button></div>
+    <div class="bprompt"><button class="btn small" id="bSay">🔊</button><span id="bZh"></span></div>
+    <div class="garea bubarea" id="barea"><div class="gpet" id="bpet" style="left:50%;margin-left:-42px">${gamePet()}</div></div>
+    <p class="ghint">找到上面中文对应的英文泡泡，点破它！连续点对有连击加分。</p>`;
+  document.body.appendChild(ov);
+  const area=ov.querySelector('#barea'),pet=ov.querySelector('#bpet');const W=area.clientWidth,H=area.clientHeight;
+  let tgt=null,score=0,combo=0,t0=performance.now(),lt=0,run=true,bubs=[],next=.2,el=0,since=0;
+  const pick=()=>{let n;do{n=pool[Math.random()*pool.length|0]}while(tgt&&n.en===tgt.en&&pool.length>1);tgt=n;since=0;ov.querySelector('#bZh').textContent=tgt.zh};
+  ov.querySelector('#bSay').onclick=()=>say(tgt.en);pick();
+  const colors=['#7CC8FF','#FF9EC4','#8FE3C8','#FFD966','#B79CF2','#FFB27A'];
+  function spawn(){const isT=Math.random()<.4||since>2.5||!bubs.some(b=>b.w.en===tgt.en);const w=isT?tgt:pool[Math.random()*pool.length|0];if(isT)since=0;
+    const d=document.createElement('button');d.className='bub';d.type='button';d.textContent=w.en;const sz=Math.max(78,Math.min(120,40+w.en.length*9));
+    d.style.width=d.style.height=sz+'px';d.style.background=`radial-gradient(circle at 30% 30%,#fff 0 12%,${colors[Math.random()*colors.length|0]}cc 60%)`;area.appendChild(d);
+    const b={el:d,w,x:sz/2+Math.random()*(W-sz),y:H+sz/2,sz,ph:Math.random()*6};bubs.push(b);
+    d.addEventListener('pointerdown',e=>{e.preventDefault();if(!run||b.dead)return;
+      if(b.w.en===tgt.en){b.dead=1;combo++;const add=combo>=5?3:combo>=3?2:1;score+=add;beep('win');say(b.w.en);d.classList.add('popok');d.textContent='+'+add;
+        ov.querySelector('#bScore').textContent=score;ov.querySelector('#bCombo').textContent=combo>=2?`🔥连击 ${combo}`:'';pet.classList.add('cheer');setTimeout(()=>pet.classList.remove('cheer'),500);
+        setTimeout(()=>d.remove(),350);bubs.splice(bubs.indexOf(b),1);pick()}
+      else{combo=0;ov.querySelector('#bCombo').textContent='';beep('bad');d.classList.add('popbad');setTimeout(()=>d.classList.remove('popbad'),400)}})}
+  function frame(now){if(!run)return;const dt=Math.min(.05,(now-(lt||now))/1000);lt=now;el=(now-t0)/1000;since+=dt;
+    const left=dur-el;ov.querySelector('#bTime').textContent=Math.max(0,Math.ceil(left));if(left<=0)return end();
+    next-=dt;if(next<=0){spawn();next=every+Math.random()*.4}
+    for(const b of bubs.slice()){b.y-=rise*dt;const x=b.x+Math.sin(b.y/50+b.ph)*14;b.el.style.transform=`translate(${x-b.sz/2}px,${b.y-b.sz/2}px)`;
+      if(b.y<-b.sz/2){b.el.remove();bubs.splice(bubs.indexOf(b),1)}}
+    requestAnimationFrame(frame)}
+  function end(){if(!run)return;run=false;gameEnd(area,ov,{key:'bubLv',lv,score,target,stars:starsOf(score,target)})}
+  ov.querySelector('#bQuit').onclick=end;requestAnimationFrame(frame);
+}
+
 function playCatch(){
   const p=S.pet,name=esc(p.name);if(stage()===0)return toast('孵出来才能玩游戏哦');if(gameLocked())return;
   const td=today();if(S.gameDay!==td){S.gameDay=td;S.gameN=0}
@@ -2439,10 +2505,10 @@ function playCatch(){
   if(p.hunger<20){beep('bad');return setBubble('我太饿了，跑不动…先喂我吃个苹果吧')}
   S.food-=GAME_COST;save();hud();
   /* 关卡：每过一关，东西掉得更快、虫子更多，第 3 关起有炸弹，第 5 关起会左右飘 */
-  const lv=S.catchLv||1,target=Math.min(60,8+4*(lv-1)),spd=1+.12*(lv-1),bugP=Math.min(.38,.18+.03*(lv-1)),bombP=lv>=3?Math.min(.1,.03+.01*(lv-3)):0,zig=lv>=5;
+  const lv=S.catchLv||1,target=Math.min(60,8+4*(lv-1)),spd=1+.1*(Math.min(lv,7)-1),bugP=Math.min(.38,.18+.03*(lv-1)),bombP=lv>=3?Math.min(.1,.03+.01*(lv-3)):0,zig=lv>=5;
   const ov=document.createElement('div');ov.className='gameov';
   ov.innerHTML=`<div class="gtop"><span>第 <b>${lv}</b> 关</span><span>🍎 <b id="gScore">0</b> / ${target}</span><span>⏱ <b id="gTime">25</b></span><button class="btn small" id="gQuit">结束</button></div>
-    <div class="garea" id="garea"><div class="gpet" id="gpet">${miniPet(curLook(),'')}</div></div>
+    <div class="garea" id="garea"><div class="gpet" id="gpet">${gamePet()}</div></div>
     <p class="ghint">左右拖动，让${name}接住 🍎（⭐ 加 3 分），躲开 🐛${bombP?' 和 💣（扣 5 分）':''}。25 秒内拿到 ${target} 分就过关！</p>`;
   document.body.appendChild(ov);
   const area=$('#garea'),pet=$('#gpet');let W=area.clientWidth,H=area.clientHeight,px=W/2,score=0,t0=performance.now(),items=[],last=0,run=true,lt=0;
@@ -2450,10 +2516,10 @@ function playCatch(){
   const at=e=>{const r=area.getBoundingClientRect();move(e.clientX-r.left)};
   area.addEventListener('pointerdown',at);area.addEventListener('pointermove',at);
   function spawn(){const r=Math.random(),k=r<bugP?'🐛':r<bugP+bombP?'💣':r<bugP+bombP+.1?'⭐':'🍎';const el=document.createElement('div');el.className='gitem';el.textContent=k;area.appendChild(el);
-    const x0=30+Math.random()*(W-60);items.push({el,x:x0,x0,ph:Math.random()*6,y:-36,v:(140+Math.random()*90)*spd+(performance.now()-t0)/120,k})}
+    const x0=30+Math.random()*(W-60);items.push({el,x:x0,x0,ph:Math.random()*6,y:-36,v:(140+Math.random()*90)*spd+Math.min(40,(performance.now()-t0)/250),k})}
   function frame(now){if(!run)return;const dt=Math.min(.05,(now-(lt||now))/1000);lt=now;
     const left=25-(now-t0)/1000;$('#gTime').textContent=Math.max(0,Math.ceil(left));if(left<=0)return end();
-    if(now-last>Math.max(240,620-(lv-1)*25-(now-t0)/60)){spawn();last=now}
+    if(now-last>Math.max(360,620-(Math.min(lv,7)-1)*25-(now-t0)/80)){spawn();last=now}
     pet.style.transform=`translateX(${px-42}px)`;
     for(const it of items.slice()){it.y+=it.v*dt;if(zig)it.x=Math.max(16,Math.min(W-16,it.x0+Math.sin(it.y/45+it.ph)*Math.min(60,20+lv*5)));it.el.style.transform=`translate(${it.x-16}px,${it.y}px)`;
       if(it.y>H-95&&it.y<H-25&&Math.abs(it.x-px)<46){if(it.k==='🐛'||it.k==='💣'){score=Math.max(0,score-(it.k==='💣'?5:2));beep('bad');if(it.k==='💣')area.classList.add('shake'),setTimeout(()=>area.classList.remove('shake'),400);pet.classList.add('ouch');setTimeout(()=>pet.classList.remove('ouch'),300)}else{score+=it.k==='⭐'?3:1;beep('pop')}
@@ -2461,9 +2527,9 @@ function playCatch(){
       else if(it.y>H){it.el.remove();items.splice(items.indexOf(it),1)}}
     requestAnimationFrame(frame)}
   function end(){if(!run)return;run=false;const pass=score>=target,xp=Math.min(80,score*2+(pass?10:0));p.joy=Math.min(100,(p.joy??60)+25);p.hunger=Math.max(0,p.hunger-15);
-    if(pass){S.catchLv=lv+1;S.food+=2;hud()}S.catchBest=Math.max(S.catchBest||0,lv+(pass?1:0));const m=applyXp(xp);save();beep(pass?'win':'ok');
+    if(pass){S.catchLv=lv+1}S.catchBest=Math.max(S.catchBest||0,lv+(pass?1:0));const m=applyXp(xp);save();beep(pass?'win':'ok');
     area.innerHTML=`<div class="gend"><div class="ptitle">${pass?`🎉 第 ${lv} 关通过！`:`接到 ${score} 分，差一点！`}</div>
-      <p>${pass?`奖励 2 个苹果。下一关（第 ${lv+1} 关）目标 ${Math.min(60,8+4*lv)} 分，会更难哦！`:`过关要 ${target} 分，下次加油！`}</p>
+      <p>${pass?`下一关（第 ${lv+1} 关）目标 ${Math.min(60,8+4*lv)} 分，会更难哦！`:`过关要 ${target} 分，下次加油！`}</p>
       <p>${name}获得 ${xp} 成长值，心情 +25，跑累了饱腹度 -15</p>${m?`<p><b>${esc(m)}</b></p>`:''}<button class="btn go" id="gOk">好的</button></div>`;
     $('#gOk').onclick=()=>{ov.remove();bubbleText=m||'好好玩！再陪我玩一次吧～';renderPet()}}
   $('#gQuit').onclick=end;requestAnimationFrame(frame);
