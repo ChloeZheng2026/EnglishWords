@@ -2332,7 +2332,7 @@ function renderPet(){
      <div><div class="mlabel">心情<span>${joy}%</span></div><div class="meter"><i id="joyBar" style="width:${joy}%;background:var(--coral)"></i></div></div>
      <div><div class="mlabel">饱腹度<span>${Math.round(p.hunger)}%</span></div><div class="meter"><i style="width:${p.hunger}%;background:${hc}"></i></div></div>
      <div class="row center"><button class="btn sun" id="feed">🍎 喂苹果（剩 ${S.food} 个）</button><button class="btn" id="patBtn">✋ 摸摸头</button></div>
-     <div class="row center" style="gap:8px"><button class="btn go" id="gameBtn" ${stage()===0?'disabled':''}>${todayDone()?'':'🔒 '}🍎 接苹果 · 第 ${S.catchLv||1} 关</button><button class="btn sun" id="runBtn" ${stage()===0?'disabled':''}>${todayDone()?'':'🔒 '}🏃 闯关跑酷 · 第 ${S.runLv||1} 关</button><button class="btn" id="bubBtn" ${stage()===0?'disabled':''}>${todayDone()?'':'🔒 '}🫧 单词泡泡 · 第 ${S.bubLv||1} 关</button></div><p class="hint center" style="margin:4px 0 0">${todayDone()?`每个游戏玩一次 ${GC} 🍎，游戏不奖励苹果`:'🔒 完成今天的打卡任务后才能玩游戏'} · 想换角色去商店「👤 角色」</p>
+     <div class="row center" style="gap:8px"><button class="btn go" id="gameBtn" ${stage()===0?'disabled':''}>${todayDone()?'':'🔒 '}🍎 接苹果 · 第 ${S.catchLv||1} 关</button><button class="btn sun" id="runBtn" ${stage()===0?'disabled':''}>${todayDone()?'':'🔒 '}🏃 闯关跑酷 · 第 ${S.runLv||1} 关</button><button class="btn" id="bubBtn" ${stage()===0?'disabled':''}>${todayDone()?'':'🔒 '}🫧 单词泡泡 · 第 ${S.bubLv||1} 关</button></div><p class="hint center" style="margin:4px 0 0">${todayDone()?`每个游戏玩一次 ${GC} 🍎，饱腹度要 ${GAME_HUNGER} 以上，游戏不奖励苹果`:'🔒 完成今天的打卡任务后才能玩游戏'} · 想换角色去商店「👤 角色」</p>
      <p class="hint center" style="margin:0">摸头 1 🍎 · 玩游戏 ${GC} 🍎（会消耗饱腹度）· 苹果靠完成今日任务、和${esc(p.name)}聊天来赚</p>
      <p class="hint center" style="margin:0">点小屋里的${esc(p.name)}，每天会有一个小惊喜；商店买礼物会让它心情变好</p>
      ${canGrad?`<div class="help center">${esc(p.name)}已经长成大王啦！毕业后它会住进图鉴，你会得到一颗新蛋，孵出新的豆豆伙伴。买过的衣服和家具都会保留。
@@ -2396,7 +2396,8 @@ function tapPet(){
   petSay(...pick(PET_EN[mood()]||PET_EN.ok));
 }
 /* 小游戏：接苹果，每天 3 次 */
-const GAME_COST=3;
+const GAME_COST=30; // 玩一次游戏要 30 个苹果
+const GAME_HUNGER=50; // 饱腹度低于 50 不能玩
 /* 小游戏 2：闯关跑酷。点屏幕跳（空中还能再跳一次），躲开障碍、吃苹果，跑完 30 秒且分数够就过关；关数越高越快、障碍越多 */
 /* 游戏要等今天的打卡任务完成后才能玩 */
 const todayDone=()=>(S.history||[]).some(h=>h.date===today())||!!(S.day&&S.day.done&&S.day.date===today());
@@ -2406,7 +2407,7 @@ const gamePet=()=>`<svg viewBox="-10 -20 220 216" class="minipet" aria-hidden="t
 function gameStart(){const p=S.pet;if(stage()===0){toast('孵出来才能玩游戏哦');return false}if(gameLocked())return false;
   if(petNight()){setBubble('呼…呼…太晚了，明天再陪我玩吧');return false}
   if(S.food<GAME_COST){beep('bad');setBubble(`玩一次要 ${GAME_COST} 个苹果，去做今日任务赚苹果吧！`);return false}
-  if(p.hunger<20){beep('bad');setBubble('我太饿了，跑不动…先喂我吃个苹果吧');return false}
+  if(p.hunger<GAME_HUNGER){beep('bad');setBubble(`我有点饿，饱腹度要 ${GAME_HUNGER} 以上才能玩，先喂我吃苹果吧`);return false}
   S.food-=GAME_COST;save();hud();return true}
 const starsOf=(score,t)=>score>=t*2?3:score>=t*1.5?2:score>=t?1:0;
 function gameEnd(area,ov,o){const p=S.pet,name=esc(p.name),st=o.stars,xp=Math.min(80,o.score*3+st*5);
@@ -2502,7 +2503,7 @@ function playCatch(){
   const td=today();if(S.gameDay!==td){S.gameDay=td;S.gameN=0}
   if(petNight())return setBubble('呼…呼…太晚了，明天再陪我玩吧');
   if(S.food<GAME_COST){beep('bad');return setBubble(`玩一次要 ${GAME_COST} 个苹果，去和我聊天或者做今日任务赚苹果吧！`)}
-  if(p.hunger<20){beep('bad');return setBubble('我太饿了，跑不动…先喂我吃个苹果吧')}
+  if(p.hunger<GAME_HUNGER){beep('bad');return setBubble(`我有点饿，饱腹度要 ${GAME_HUNGER} 以上才能玩，先喂我吃苹果吧`)}
   S.food-=GAME_COST;save();hud();
   /* 关卡：每过一关，东西掉得更快、虫子更多，第 3 关起有炸弹，第 5 关起会左右飘 */
   const lv=S.catchLv||1,target=Math.min(60,8+4*(lv-1)),spd=1+.1*(Math.min(lv,7)-1),bugP=Math.min(.38,.18+.03*(lv-1)),bombP=lv>=3?Math.min(.1,.03+.01*(lv-3)):0,zig=lv>=5;
