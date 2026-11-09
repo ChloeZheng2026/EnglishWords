@@ -423,7 +423,7 @@ function fresh(){return {decks:SAMPLE.map(d=>mkDeck(d.id,d.name,d.items)),active
 let S;
 try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
 if(!S||!S.decks){S=fresh();migrateV1()}
-S.pet.sp=S.pet.sp||'leaf';S.owned=S.owned||['plant'];S.equip=S.equip||{};S.roomOff=S.roomOff||[];S.dex=S.dex||[];S.badges=S.badges||{};
+S.pet.sp=S.pet.sp||'leaf';S.cxp=S.cxp||{};S.owned=S.owned||['plant'];S.equip=S.equip||{};S.roomOff=S.roomOff||[];S.dex=S.dex||[];S.badges=S.badges||{};
 if(!S.exV){S.exV=1;const ne={};SAMPLE.forEach(d=>d.items.forEach(r=>ne[d.id+'|'+r[0]]=r));S.decks.forEach(d=>d.items.forEach(it=>{const r=ne[it.id];if(r){it.ex=r[2];it.exZh=r[3]}}));if(S.day&&S.day.gen&&S.day.gen.failed)delete S.day.gen;save()}
 if(!S.revV){S.revV=1;S.newPerDay=5;S.maxReview=5;if(S.day&&!S.day.started&&!S.day.done)S.day=null;save()}
 if(!S.stepsV){if(S.day&&S.day.step>=1)S.day.step+=2;S.stepsV=2;save()} // 新增两关后，进行中的进度往后挪
@@ -2116,11 +2116,22 @@ function lightsSVG(){const cs=['#FF6450','#FFC52E','#4CBB72','#4AA8E8','#FF7FB0'
   for(let x=20,k=0;x<400;x+=36,k++){const t=((x%200)-100)/100,y=12+14*(1-t*t);s+=`<circle cx="${x}" cy="${y+5}" r="5" fill="${cs[k%5]}"/>`}return s}
 
 function decay(){const p=S.pet,now=Date.now(),h=(now-p.t)/36e5;p.hunger=Math.max(0,p.hunger-h*4);p.joy=Math.max(0,(p.joy??60)-h*3);p.t=now;save()}
-function lvlInfo(xp){let L=1,need=40;while(xp>=need&&L<GRAD_LV){xp-=need;L++;need=40+20*(L-1)}return {lvl:L,into:xp,need}}
+function lvlInfo(xp,cap){cap=cap||GRAD_LV;let L=1,need=40;while(xp>=need&&L<cap){xp-=need;L++;need=40+20*(L-1)}return {lvl:L,into:xp,need}}
 const lvlOf=xp=>lvlInfo(xp).lvl;
-const level=()=>lvlOf(S.pet.xp);
+/* 每个角色有自己的成长值：自己正在养的豆豆存在 S.pet.xp，其他角色（毕业的豆豆、壳壳）存在 S.cxp；喂谁谁长大 */
+const isMain=()=>curLook()===S.pet.sp;
+const XP_AT=L=>{let x=0;for(let k=1;k<L;k++)x+=40+20*(k-1);return x};
+function xpOf(id){if(id===S.pet.sp)return S.pet.xp;S.cxp=S.cxp||{};if(S.cxp[id]==null){const d=(S.dex||[]).find(d=>d.sp===id);S.cxp[id]=d?(d.xp??XP_AT(10)):0}return S.cxp[id]}
+const capOf=id=>id===S.pet.sp?GRAD_LV:30;
+const lvOfId=id=>lvlInfo(xpOf(id),capOf(id)).lvl;
+const curXp=()=>xpOf(curLook());
+function addXpCur(n){const id=curLook();if(id===S.pet.sp)S.pet.xp+=n;else S.cxp[id]=xpOf(id)+n}
+const curName=()=>{const id=curLook();if(id===S.pet.sp)return S.pet.name;const d=(S.dex||[]).find(d=>d.sp===id);return d?d.name:spOf(id).name};
+const level=()=>lvOfId(curLook());
+/* 商店解锁看所有角色里最高的等级，换到小角色也不会把东西锁上 */
+const topLevel=()=>Math.max(lvOfId(S.pet.sp),...[...new Set([...(S.dex||[]).map(d=>d.sp),...(S.chars||['egg_milk'])])].filter(lookOK).map(lvOfId));
 const stageOf=l=>l<2?0:l<4?1:l<7?2:3;
-const stage=()=>stageOf(level());
+const stage=()=>isMain()?stageOf(level()):Math.max(1,stageOf(level()));
 const STAGE_NAME=['神秘蛋','宝宝','少年','大王'];
 let GRAD_LV=10;const updGrad=()=>{GRAD_LV=Math.min(30,10+2*((S&&S.dex)||[]).length)};updGrad(); // 每毕业一只，下一只要多养 2 级
 function mood(){const h=S.pet.hunger,j=S.pet.joy??60;if(petNight())return 'sleep';return h<25||j<20?'sad':h>60&&j>50?'happy':'ok'}
@@ -2293,16 +2304,16 @@ function bindTalk(){
 function charShopHTML(){const own=S.chars||['egg_milk'],cur=curLook();
   const card=(id,name,sub,act)=>`<div class="sitem ${id===cur?'own':''}">${miniPet(id)}<b>${esc(name)}</b><span class="hint" style="margin:0">${sub}</span>${act}</div>`;
   const use=id=>id===cur?'<span class="tag2 m">使用中</span>':`<button class="btn small go" data-look="${id}">换成它</button>`;
-  return `<p class="hint" style="margin:0 0 8px">换个样子陪你学习！装备（机甲、头盔、武器…）换了角色也照样穿着。成长和毕业还是按${esc(S.pet.name)}来算。</p>
-   <div class="secl">我的豆豆</div><div class="shop">${card(S.pet.sp,S.pet.name,'本来的样子',use(S.pet.sp))}${(S.dex||[]).filter(d=>d.sp!==S.pet.sp).map(d=>card(d.sp,d.name,'已毕业',use(d.sp))).join('')}</div>
-   <div class="secl">壳壳一家</div><div class="shop">${CHARS.map(c=>own.includes(c.id)?card(c.id,c.name,'已解锁',use(c.id)):card(c.id,c.name,c.lv&&level()<c.lv?`Lv.${c.lv} 解锁`:'可以解锁',c.lv&&level()<c.lv?`<span class="tag2">🔒 🍎${c.price}</span>`:`<button class="btn small sun" data-buychar="${c.id}" ${S.food<c.price?'disabled':''}>🍎 ${c.price}</button>`)).join('')}</div>`}
+  return `<p class="hint" style="margin:0 0 8px">换个角色陪你学习！每个角色有自己的等级：现在是谁陪你，喂苹果、玩游戏、打卡的成长值就给谁。新解锁的壳壳从 Lv.1 开始。装备换了角色也照样穿着；毕业只看${esc(S.pet.name)}。</p>
+   <div class="secl">我的豆豆</div><div class="shop">${card(S.pet.sp,S.pet.name,'正在养 · Lv.'+lvOfId(S.pet.sp),use(S.pet.sp))}${(S.dex||[]).filter(d=>d.sp!==S.pet.sp).map(d=>card(d.sp,d.name,'已毕业 · Lv.'+lvOfId(d.sp),use(d.sp))).join('')}</div>
+   <div class="secl">壳壳一家</div><div class="shop">${CHARS.map(c=>own.includes(c.id)?card(c.id,c.name,'Lv.'+lvOfId(c.id),use(c.id)):card(c.id,c.name,c.lv&&topLevel()<c.lv?`Lv.${c.lv} 解锁`:'可以解锁',c.lv&&topLevel()<c.lv?`<span class="tag2">🔒 🍎${c.price}</span>`:`<button class="btn small sun" data-buychar="${c.id}" ${S.food<c.price?'disabled':''}>🍎 ${c.price}</button>`)).join('')}</div>`}
 function shopHTML(){
   const egg=stage()===0;
   const cnt=sl=>sl==='char'?(S.chars||['egg_milk']).length+'/'+CHARS.length:ITEMS.filter(i=>i.slot===sl&&S.owned.includes(i.id)).length+'/'+ITEMS.filter(i=>i.slot===sl).length;
   return (egg?'<p class="hint" style="margin:0 0 8px">衣服可以先买好，孵出来就能穿上。</p>':'')+`<div class="scats">${SLOTS.map(([sl,lb])=>`<button class="scat ${sl===shopCat?'on':''}" data-scat="${sl}">${lb}<small>${cnt(sl)}</small></button>`).join('')}</div>`
     +(shopCat==='char'?charShopHTML():'')+SLOTS.filter(([slot])=>slot===shopCat&&slot!=='char').map(([slot,label])=>`
     <div class="shop">${ITEMS.filter(i=>i.slot===slot).map(it=>{const own=S.owned.includes(it.id);let act;
-      if(!own)act=it.badge?`<span class="tag2">🔒 ${BADGES.find(b=>b.id===it.badge).name}徽章</span>`:it.lv&&level()<it.lv?`<span class="tag2">🔒 Lv.${it.lv} 解锁 · 🍎${it.price}</span>`:`<button class="btn small sun" data-buy="${it.id}" ${S.food<it.price?'disabled':''}>🍎 ${it.price}</button>`;
+      if(!own)act=it.badge?`<span class="tag2">🔒 ${BADGES.find(b=>b.id===it.badge).name}徽章</span>`:it.lv&&topLevel()<it.lv?`<span class="tag2">🔒 Lv.${it.lv} 解锁 · 🍎${it.price}</span>`:`<button class="btn small sun" data-buy="${it.id}" ${S.food<it.price?'disabled':''}>🍎 ${it.price}</button>`;
       else if(slot==='room')act=`<button class="btn small" data-room="${it.id}">${S.roomOff.includes(it.id)?'摆出来':'收起来'}</button>`;
       else act=`<button class="btn small ${S.equip[slot]===it.id?'':'go'}" data-wear="${it.id}">${S.equip[slot]===it.id?'脱下':'穿上'}</button>`;
       return `<div class="sitem ${own?'own':''}"><span class="ic">${it.ic}</span><b>${it.name}</b>${act}</div>`}).join('')}</div>`).join('');
@@ -2319,31 +2330,31 @@ function badgeHTML(){
     <span class="hint" style="margin:0">${b.desc}</span><span class="tag2 ${got?'m':''}">${got?got.slice(5).replace('-','/')+' 获得':'奖励 🍎 '+b.reward}</span></div>`}).join('')}</div>`;
 }
 function renderPet(){
-  decay();const p=S.pet,li=lvlInfo(p.xp),l=li.lvl,into=li.into;if(!bubbleText)bubbleText=petLine();const joy=Math.round(p.joy??60);
+  decay();const p=S.pet,main=isMain(),cid=curLook(),cn=curName(),cap=capOf(cid),li=lvlInfo(curXp(),cap),l=li.lvl,into=li.into;if(!bubbleText)bubbleText=petLine();const joy=Math.round(p.joy??60);
   const GC=GAME_COST;
   const hc=p.hunger>60?'var(--leaf)':p.hunger>25?'var(--sun)':'var(--coral)';
-  const canGrad=l>=GRAD_LV;
+  const canGrad=main&&l>=GRAD_LV,full=!main&&l>=cap;
   $('#view').innerHTML=`<div class="stack">
    <div class="petstage"><div class="bubble ${CJK.test(bubbleText)?'':'enb'}" id="bubble">${esc(bubbleText)}</div><div id="petBox">${sceneSVG()}</div>
-     <div class="row center" style="gap:8px;margin-top:4px"><input class="petname" id="petName" value="${esc(p.name)}" maxlength="8" aria-label="宠物名字">
-     <span class="chip">Lv.${l} · ${stage()===0?'神秘蛋':spOf(p.sp).name+STAGE_NAME[stage()]}</span></div></div>
+     <div class="row center" style="gap:8px;margin-top:4px">${main?`<input class="petname" id="petName" value="${esc(p.name)}" maxlength="8" aria-label="宠物名字">`:`<b class="petname" style="border:0">${esc(cn)}</b>`}
+     <span class="chip">Lv.${l} · ${stage()===0?'神秘蛋':spOf(cid).name+STAGE_NAME[stage()]}</span></div></div>
    <div class="card stack" style="gap:12px">
-     <div><div class="mlabel">成长值<span>${canGrad?'可以毕业啦！':`${into} / ${li.need} · Lv.${GRAD_LV} 毕业`}</span></div><div class="meter"><i style="width:${canGrad?100:Math.round(into/li.need*100)}%;background:var(--sky)"></i></div></div>
+     <div><div class="mlabel">成长值<span>${canGrad?'可以毕业啦！':full?'满级啦！':main?`${into} / ${li.need} · Lv.${GRAD_LV} 毕业`:`${into} / ${li.need}`}</span></div><div class="meter"><i style="width:${canGrad||full?100:Math.round(into/li.need*100)}%;background:var(--sky)"></i></div></div>
      <div><div class="mlabel">心情<span>${joy}%</span></div><div class="meter"><i id="joyBar" style="width:${joy}%;background:var(--coral)"></i></div></div>
      <div><div class="mlabel">饱腹度<span>${Math.round(p.hunger)}%</span></div><div class="meter"><i style="width:${p.hunger}%;background:${hc}"></i></div></div>
      <div class="row center"><button class="btn sun" id="feed">🍎 喂苹果（剩 ${S.food} 个）</button><button class="btn" id="patBtn">✋ 摸摸头</button></div>
      <div class="row center" style="gap:8px"><button class="btn go" id="gameBtn" ${stage()===0?'disabled':''}>${todayDone()?'':'🔒 '}🍎 接苹果 · 第 ${S.catchLv||1} 关</button><button class="btn sun" id="runBtn" ${stage()===0?'disabled':''}>${todayDone()?'':'🔒 '}🏃 闯关跑酷 · 第 ${S.runLv||1} 关</button><button class="btn" id="bubBtn" ${stage()===0?'disabled':''}>${todayDone()?'':'🔒 '}🫧 单词泡泡 · 第 ${S.bubLv||1} 关</button></div><p class="hint center" style="margin:4px 0 0">${todayDone()?`每个游戏玩一次 ${GC} 🍎，饱腹度要 ${GAME_HUNGER} 以上，游戏不奖励苹果`:'🔒 完成今天的打卡任务后才能玩游戏'} · 想换角色去商店「👤 角色」</p>
      <p class="hint center" style="margin:0">摸头 1 🍎 · 玩游戏 ${GC} 🍎（会消耗饱腹度）· 苹果靠完成今日任务、和${esc(p.name)}聊天来赚</p>
-     <p class="hint center" style="margin:0">点小屋里的${esc(p.name)}，每天会有一个小惊喜；商店买礼物会让它心情变好</p>
+     ${main?'':`<p class="hint center" style="margin:0">现在是${esc(cn)}陪你：喂苹果、玩游戏、打卡的成长值都给${esc(cn)}。想让${esc(p.name)}长大毕业，去商店「角色」换回它。</p>`}<p class="hint center" style="margin:0">点小屋里的${esc(cn)}，每天会有一个小惊喜；商店买礼物会让它心情变好</p>
      ${canGrad?`<div class="help center">${esc(p.name)}已经长成大王啦！毕业后它会住进图鉴，你会得到一颗新蛋，孵出新的豆豆伙伴。买过的衣服和家具都会保留。
        <div class="row center" style="margin-top:8px"><button class="btn ${gradArmed?'coral':'go'}" id="gradBtn">${gradArmed?'确定毕业':'🎓 让'+esc(p.name)+'毕业'}</button></div></div>`:''}
    </div>
-   <div class="card" id="talkCard"><h2 style="font-size:20px">💬 和${esc(p.name)}聊天</h2><div id="talkBody">${talkHTML()}</div></div>
+   <div class="card" id="talkCard"><h2 style="font-size:20px">💬 和${esc(cn)}聊天</h2><div id="talkBody">${talkHTML()}</div></div>
    <div class="card stack" style="gap:12px">
      <div class="seg" role="tablist">${[['shop','🛍️ 商店'],['dex','📖 图鉴'],['badge','🏅 徽章']].map(([k,t])=>`<button aria-pressed="${petTab===k}" data-ptab="${k}">${t}</button>`).join('')}</div>
      ${petTab==='shop'?shopHTML():petTab==='dex'?dexHTML():badgeHTML()}
    </div></div>`;
-  $('#petName').onchange=e=>{p.name=e.target.value.trim()||spOf(p.sp).name;save()};
+  const pn=$('#petName');if(pn)pn.onchange=e=>{p.name=e.target.value.trim()||spOf(p.sp).name;save()};
   $('#feed').onclick=feed;
   $('#patBtn').onclick=patPet;$('#gameBtn').onclick=playCatch;$('#runBtn').onclick=playRun;$('#bubBtn').onclick=playBubble;const ph=$('#petHit');if(ph)ph.addEventListener('click',tapPet);
   const gb=$('#gradBtn');if(gb)gb.onclick=()=>{if(!gradArmed){gradArmed=true;return renderPet()}graduate()};
@@ -2362,9 +2373,9 @@ function feed(){
 }
 /* --- 宠物：成长、心情、互动、小游戏 --- */
 function petNight(){const h=new Date().getHours();return h>=22||h<6}
-function applyXp(n){const p=S.pet,b=level(),bst=stage();p.xp+=n;
-  if(stage()!==bst){if(bst===0){if(p.name==='小蛋')p.name=spOf(p.sp).name;return `咔嚓！我破壳啦！我是${spOf(p.sp).name}，你好呀！`}return '哇！我变成'+spOf(p.sp).name+STAGE_NAME[stage()]+'啦！'}
-  if(level()>b)return level()>=GRAD_LV?'我长成大王啦！可以毕业了！':'我升级啦！Lv.'+level();
+function applyXp(n){const p=S.pet,main=isMain(),b=level(),bst=stage();addXpCur(n);const nm=spOf(curLook()).name;
+  if(stage()!==bst){if(bst===0&&main){if(p.name==='小蛋')p.name=spOf(p.sp).name;return `咔嚓！我破壳啦！我是${spOf(p.sp).name}，你好呀！`}return '哇！我变成'+nm+STAGE_NAME[stage()]+'啦！'}
+  if(level()>b)return main&&level()>=GRAD_LV?'我长成大王啦！可以毕业了！':'我升级啦！Lv.'+level();
   return ''}
 function petFx(ch,n,cls){const box=$('.petstage');if(!box)return;
   for(let i=0;i<n;i++){const s=document.createElement('span');s.className='pfx '+(cls||'');s.textContent=ch;
@@ -2403,14 +2414,14 @@ const GAME_HUNGER=50; // 饱腹度低于 50 不能玩
 const todayDone=()=>(S.history||[]).some(h=>h.date===today())||!!(S.day&&S.day.done&&S.day.date===today());
 function gameLocked(){if(todayDone())return false;beep('bad');setBubble('先完成今天的打卡任务，再来陪我玩游戏吧！');toast('完成今日任务后才能玩游戏哦');return true}
 /* 游戏里的角色：就是你养的宠物，穿着买的装备 */
-const gamePet=()=>`<svg viewBox="-10 -20 220 216" class="minipet" aria-hidden="true">${petInner({sp:S.pet.sp,st:Math.max(1,stage()),mood:'happy',lvl:level(),eq:S.equip})}</svg>`;
+const gamePet=()=>`<svg viewBox="-10 -20 220 216" class="minipet" aria-hidden="true">${petInner({sp:curLook(),st:Math.max(1,stage()),mood:'happy',lvl:level(),eq:S.equip})}</svg>`;
 function gameStart(){const p=S.pet;if(stage()===0){toast('孵出来才能玩游戏哦');return false}if(gameLocked())return false;
   if(petNight()){setBubble('呼…呼…太晚了，明天再陪我玩吧');return false}
   if(S.food<GAME_COST){beep('bad');setBubble(`玩一次要 ${GAME_COST} 个苹果，去做今日任务赚苹果吧！`);return false}
   if(p.hunger<GAME_HUNGER){beep('bad');setBubble(`我有点饿，饱腹度要 ${GAME_HUNGER} 以上才能玩，先喂我吃苹果吧`);return false}
   S.food-=GAME_COST;save();hud();return true}
 const starsOf=(score,t)=>score>=t*2?3:score>=t*1.5?2:score>=t?1:0;
-function gameEnd(area,ov,o){const p=S.pet,name=esc(p.name),st=o.stars,xp=Math.min(80,o.score*3+st*5);
+function gameEnd(area,ov,o){const p=S.pet,name=esc(curName()),st=o.stars,xp=Math.min(80,o.score*3+st*5);
   p.joy=Math.min(100,(p.joy??60)+25);p.hunger=Math.max(0,p.hunger-15);if(st){S[o.key]=o.lv+1}
   const m=applyXp(xp);save();beep(st?'win':'ok');
   area.innerHTML=`<div class="gend"><div class="ptitle">${st?`🎉 第 ${o.lv} 关通过！`:o.dead?'撞到 3 次啦，再来一次！':`拿到 ${o.score} 分，差一点！`}</div>
@@ -2499,7 +2510,7 @@ function playBubble(){
 }
 
 function playCatch(){
-  const p=S.pet,name=esc(p.name);if(stage()===0)return toast('孵出来才能玩游戏哦');if(gameLocked())return;
+  const p=S.pet,name=esc(curName());if(stage()===0)return toast('孵出来才能玩游戏哦');if(gameLocked())return;
   const td=today();if(S.gameDay!==td){S.gameDay=td;S.gameN=0}
   if(petNight())return setBubble('呼…呼…太晚了，明天再陪我玩吧');
   if(S.food<GAME_COST){beep('bad');return setBubble(`玩一次要 ${GAME_COST} 个苹果，去和我聊天或者做今日任务赚苹果吧！`)}
@@ -2536,7 +2547,7 @@ function playCatch(){
   $('#gQuit').onclick=end;requestAnimationFrame(frame);
 }
 function graduate(){
-  const p=S.pet;S.dex.push({sp:p.sp,name:p.name,date:today()});updGrad();
+  const p=S.pet;S.dex.push({sp:p.sp,name:p.name,date:today(),xp:p.xp});S.look=null;updGrad();
   const next=SPECIES.find(s=>!S.dex.some(d=>d.sp===s.id))||SPECIES[Math.random()*SPECIES.length|0];
   S.pet={name:'小蛋',xp:0,hunger:60,joy:60,t:Date.now(),sp:next.id};gradArmed=false;talk=null;petTab='dex';
   bubbleText='（新的蛋来啦！会孵出什么呢？）';save();beep('win');checkBadges();renderPet();toast(p.name+' 毕业啦，住进了图鉴！');
@@ -2544,11 +2555,11 @@ function graduate(){
 function petClick(e){
   const pt=e.target.closest('[data-ptab]');if(pt){petTab=pt.dataset.ptab;renderPet();return true}
   const sc=e.target.closest('[data-scat]');if(sc){shopCat=sc.dataset.scat;const y=window.scrollY;renderPet();window.scrollTo(0,y);return true}
-  const b=e.target.closest('[data-buy]');if(b){const it=ITEMS.find(i=>i.id===b.dataset.buy);if(S.food<it.price||(it.lv&&level()<it.lv))return true;
+  const b=e.target.closest('[data-buy]');if(b){const it=ITEMS.find(i=>i.id===b.dataset.buy);if(S.food<it.price||(it.lv&&topLevel()<it.lv))return true;
     S.food-=it.price;S.owned.push(it.id);if(it.slot!=='room'&&stage()>0)S.equip[it.slot]=it.id;S.pet.joy=Math.min(100,(S.pet.joy??60)+15);save();hud();beep('win');
     bubbleText=(it.slot==='room'?'哇，新家具！谢谢你！':it.slot==='weapon'?'我拿到'+it.name+'啦，看招！':it.slot==='mech'?'机甲启动！'+it.name+'，出发！':it.slot==='skin'?'我换上'+it.name+'啦，帅不帅？':'我穿上新'+it.name+'啦，好看吗？')+'（心情 +15）';renderPet();setTimeout(()=>petFx('💖',3),50);return true}
-  const lk=e.target.closest('[data-look]');if(lk){S.look=lk.dataset.look===S.pet.sp?null:lk.dataset.look;save();beep('pop');bubbleText='换好啦！我现在是'+spOf(curLook()).name+'的样子～';renderPet();return true}
-  const bc=e.target.closest('[data-buychar]');if(bc){const c=CHARS.find(x=>x.id===bc.dataset.buychar);if(!c||S.food<c.price||(c.lv&&level()<c.lv))return true;
+  const lk=e.target.closest('[data-look]');if(lk){S.look=lk.dataset.look===S.pet.sp?null:lk.dataset.look;save();beep('pop');bubbleText='换好啦！现在是'+curName()+'陪你（Lv.'+level()+'）～';renderPet();return true}
+  const bc=e.target.closest('[data-buychar]');if(bc){const c=CHARS.find(x=>x.id===bc.dataset.buychar);if(!c||S.food<c.price||(c.lv&&topLevel()<c.lv))return true;
     S.food-=c.price;S.chars=(S.chars||['egg_milk']).concat(c.id);S.look=c.id;save();hud();beep('win');bubbleText='解锁了'+c.name+'！我变身啦～';renderPet();setTimeout(()=>petFx('✨',4),50);return true}
   const w=e.target.closest('[data-wear]');if(w){const it=ITEMS.find(i=>i.id===w.dataset.wear);S.equip[it.slot]=S.equip[it.slot]===it.id?null:it.id;save();beep('pop');renderPet();return true}
   const r=e.target.closest('[data-room]');if(r){const id=r.dataset.room;S.roomOff=S.roomOff.includes(id)?S.roomOff.filter(x=>x!==id):S.roomOff.concat(id);save();beep('pop');renderPet();return true}
