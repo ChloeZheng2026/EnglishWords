@@ -2730,6 +2730,11 @@ function bindBackup(){
   $('#bkOpen').onclick=()=>$('#bkOpenFile').click();
   $('#bkOpenFile').onchange=async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;
     try{const o=await readBackup(await f.text());confirmRestore(o,'备份文件')}catch(err){const st=$('#bkStat');st.className='bkmsg bad';st.textContent=err.msg||'这个文件不是备份文件'}};
+  $('#bkClip').onclick=async()=>{const st=$('#bkStat');let t='';
+    try{t=await navigator.clipboard.readText()}catch(e){}
+    if(!t){const bx=$('#bkCodeBox');bx.open=true;const i=$('#bkIn');i.scrollIntoView({block:'center'});i.focus();st.className='bkmsg';st.textContent='读不到剪贴板：请长按上面的框，选「粘贴」';return}
+    try{confirmRestore(await readBackup(t),'粘贴的备份')}catch(err){st.className='bkmsg bad';st.textContent=(err.msg||'剪贴板里不是备份内容')+'。请在微信里打开备份文件，长按 → 全选 → 复制后再试'}};
+  $('#bkIn').addEventListener('input',async()=>{const t=$('#bkIn').value;if(!/doudou[12]/i.test(t))return;try{confirmRestore(await readBackup(t),'粘贴的备份')}catch(e){}});
   $('#ghSave').onclick=async()=>{const token=$('#ghTok').value.trim(),name=$('#ghName').value.trim();if(!token)return toast('先填 GitHub 令牌');if(!name)return toast('给这台 iPad 起个备份名字');
     const old=ghCfg();ghSet({token,name,gist:old.token===token?old.gist:''});$('#ghStat').textContent='正在连接 GitHub…';
     try{await ghApi('/gists?per_page=1')}catch(err){$('#ghStat').textContent=ghErr(err);return}
@@ -2966,15 +2971,16 @@ function renderDecks(){
    <div class="card stack" style="gap:10px"><h2 style="font-size:21px">备份 / 恢复进度</h2>
     <p class="hint" style="margin:0">学习记录、苹果、宠物、徽章、导入的词库都存在这台 iPad 的浏览器里。建议打开下面的 GitHub 云端备份（自动），再时不时存一份备份文件到 iCloud。</p>
     <div class="secl" style="margin:0">💾 备份文件</div>
-    <div class="row"><button class="btn go" id="bkFile" type="button">💾 保存备份文件</button><button class="btn" id="bkOpen" type="button">📂 从文件恢复</button><input type="file" id="bkOpenFile" accept=".txt,.json,text/plain" hidden></div>
+    <div class="row"><button class="btn go" id="bkFile" type="button">💾 保存备份文件</button><button class="btn" id="bkOpen" type="button">📂 从文件恢复</button><button class="btn" id="bkClip" type="button">📋 粘贴恢复</button><input type="file" id="bkOpenFile" hidden></div>
     <p class="hint" style="margin:0">点「保存备份文件」后，在弹出的菜单里选「存储到文件」→ iCloud 云盘，或者发给微信「文件传输助手」。恢复时点「从文件恢复」选这个文件。</p>
+    <details class="help"><summary>备份在微信里，怎么恢复？</summary>微信里的文件「从文件恢复」选不到，用下面任一种：<br><b>方法一（最简单）：</b>在微信里点开备份文件 → 长按文字 → 全选 → 复制，回到这里点「📋 粘贴恢复」。<br><b>方法二：</b>在微信里点开备份文件 → 右上角「···」→「用其他应用打开」→「存储到文件」，存好后再点「📂 从文件恢复」去选。</details>
     <div class="secl" style="margin:8px 0 0">☁️ GitHub 云端备份（自动）</div>
     ${(()=>{const c=ghCfg();return `<div><label class="lb" for="ghTok">GitHub 令牌（只勾选 gist 权限）</label><input type="password" id="ghTok" value="${esc(c.token||'')}" autocomplete="off" placeholder="ghp_ 开头的一串字符"></div>
     <div><label class="lb" for="ghName">这台 iPad 的备份名字</label><input type="text" id="ghName" value="${esc(c.name||'')}" placeholder="例如：汉堡、陌芊（两台 iPad 用不同名字）"></div>
     <div class="row"><button class="btn go" id="ghSave" type="button">保存并上传</button>${c.token?'<button class="btn" id="ghUp" type="button">☁️ 立即上传</button><button class="btn" id="ghDown" type="button">☁️ 从云端恢复</button>':''}</div>
     <div class="bkmsg" id="ghStat">${ghStatusText()}</div>
     <details class="help"><summary>怎么拿到 GitHub 令牌？</summary>1. 电脑或手机浏览器登录 github.com → 右上角头像 → Settings。<br>2. 左侧最下面 Developer settings → Personal access tokens → Tokens (classic) → Generate new token (classic)。<br>3. Note 随便写（如 背单词备份），Expiration 选 No expiration，<b>只勾选 gist</b>，最下面点 Generate token。<br>4. 复制 ghp_ 开头的令牌，粘贴到上面，点「保存并上传」。两台 iPad 可以用同一个令牌，备份名字填不一样的就行。<br>备份存在你账号下的私密 Gist 里，别人看不到；令牌只能读写 Gist，碰不到你的代码仓库。</details>`})()}
-    <details class="help"><summary>其他方式：备份码（文字）</summary>
+    <details class="help" id="bkCodeBox"><summary>其他方式：备份码（文字）</summary>
     <div class="row" style="margin-top:8px"><button class="btn" id="bkMake">生成备份码</button><button class="btn" id="bkCopy" hidden>复制</button><button class="btn" id="bkShare" hidden>分享到微信</button></div>
     <textarea id="bkOut" readonly hidden style="min-height:90px;margin-top:8px" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
     <div style="margin-top:8px"><label class="lb" for="bkIn">恢复：把备份码粘贴到这里</label><textarea id="bkIn" style="min-height:90px" placeholder="长按这里，选「粘贴」" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea></div>
