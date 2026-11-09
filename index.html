@@ -1878,7 +1878,7 @@ function finishDay(ctx){
   if(S.streak.last!==t){S.streak.n=S.streak.last===addDays(t,-1)?S.streak.n+1:1;S.streak.last=t}
   S.history.push({date:t,n:d.newIds.length,r:d.revIds.length,miss:Object.keys(d.missed).length});
   finishPats(t);{const m=applyXp(30);bubbleText=m||'今天的任务完成啦！我也长大了一点～喂我吃苹果吧！'}d.done=true;d.mastered=newly;S.food+=5;save();hud();checkBadges();beep('win');
-  go('today');toast('任务完成！奖励 5 个苹果 🍎');
+  go('today');toast('任务完成！奖励 5 个苹果 🍎');setTimeout(()=>{try{ghUpload(true)}catch(e){}},1500);
 }
 function dueOn(date){return Object.values(S.srs).filter(r=>!r.mastered&&r.due<=date).length}
 
@@ -2687,7 +2687,56 @@ async function readBackup(raw){
   let o;try{o=JSON.parse(j)}catch(e){throw {msg:'备份码不完整，请重新完整复制'}}
   if(!o||!Array.isArray(o.decks)||!o.pet)throw {msg:'这不是有效的备份码'};return o}
 /* 注：只有开头 DOUDOU 不区分大小写，后面的内容区分大小写，不能改动 */
+/* ---------- GitHub Gist 云端备份：每天完成任务后自动上传；失败就记下来，下次打开 App 再试 ---------- */
+const GH_KEY='doudou-gh',GH_DESC='汉堡陌芊背单词备份（请勿删除）';
+function ghCfg(){try{return JSON.parse(localStorage.getItem(GH_KEY))||{}}catch(e){return {}}}
+function ghSet(o){const c=Object.assign(ghCfg(),o);try{localStorage.setItem(GH_KEY,JSON.stringify(c))}catch(e){}return c}
+const ghFile=()=>'doudou-'+((ghCfg().name||'backup').trim().replace(/[^\w一-鿿-]+/g,'_')||'backup')+'.txt';
+function ghStatusText(){const c=ghCfg();if(!c.token)return '还没开启。填好令牌就会每天自动备份。';
+  const t=c.last?new Date(c.last):null;const f=t?`${t.getMonth()+1}月${t.getDate()}日 ${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`:'';
+  return (c.pending?'⚠️ 上次上传没成功，下次打开会自动重试。':'✓ 已开启自动备份。')+(f?` 最近一次上传：${f}`:'')+`（文件：${ghFile()}）`}
+async function ghApi(path,opt){const c=ghCfg();const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),25000);
+  try{const r=await fetch('https://api.github.com'+path,Object.assign({signal:ctl.signal},opt||{},{headers:{Authorization:'Bearer '+c.token,Accept:'application/vnd.github+json','Content-Type':'application/json'}}));
+    if(!r.ok)throw {code:r.status};return await r.json()}catch(e){if(e&&e.code)throw e;throw {code:ctl.signal.aborted?'timeout':'network'}}finally{clearTimeout(tm)}}
+const ghErr=e=>{const c=e&&e.code;return c===401||c===403?'令牌不对或没有 gist 权限':c==='timeout'||c==='network'?'连不上 GitHub（网络慢），稍后会自动重试':'GitHub 出错了（'+c+'）'};
+async function ghFind(){const c=ghCfg();if(c.gist)return c.gist;
+  for(let page=1;page<=3;page++){const list=await ghApi('/gists?per_page=100&page='+page);const g=list.find(x=>x.description===GH_DESC);if(g){ghSet({gist:g.id});return g.id}if(list.length<100)break}return null}
+let ghBusy=false;
+async function ghUpload(quiet){const c=ghCfg();if(!c.token||ghBusy)return false;ghBusy=true;
+  try{const content=await makeBackup();let id=await ghFind();const body={files:{[ghFile()]:{content}}};
+    try{if(id)await ghApi('/gists/'+id,{method:'PATCH',body:JSON.stringify(body)});else id=null}catch(e){if(e.code===404){ghSet({gist:''});id=null}else throw e}
+    if(!id){const g=await ghApi('/gists',{method:'POST',body:JSON.stringify(Object.assign({description:GH_DESC,public:false},body))});ghSet({gist:g.id})}
+    ghSet({last:Date.now(),pending:false});if(!quiet)toast('已备份到 GitHub ☁️');return true}
+  catch(e){ghSet({pending:true});if(!quiet)toast(ghErr(e));return false}finally{ghBusy=false;const st=$('#ghStat');if(st)st.textContent=ghStatusText()}}
+async function ghDownload(){const id=await ghFind();if(!id)throw {msg:'云端还没有备份'};const g=await ghApi('/gists/'+id);const f=g.files&&g.files[ghFile()];
+  if(!f){const names=Object.keys(g.files||{}).map(n=>n.replace(/^doudou-|\.txt$/g,'')).join('、');throw {msg:`云端没有「${ghCfg().name||'backup'}」的备份${names?'，现有：'+names+'（把备份名字改成其中一个）':''}`}}
+  let text=f.content;if(f.truncated){const r=await fetch(f.raw_url);text=await r.text()}return readBackup(text)}
+/* 自动：今天完成任务后上传；打开 App 时，如果上次失败或超过一天没传，就补传 */
+function ghAuto(){const c=ghCfg();if(!c.token)return;if(c.pending||!c.last||Date.now()-c.last>20*3600e3)ghUpload(true)}
+setTimeout(()=>{try{ghAuto()}catch(e){}},6000);
+/* 备份文件：用 iPad 的分享菜单存到「文件 / iCloud」或发到微信；不支持分享的浏览器就直接下载 */
+async function saveBackupFile(){const code=await makeBackup();const nm=`背单词备份-${(ghCfg().name||S.pet.name||'').trim()}-${today()}.txt`.replace(/--/,'-');
+  const file=new File([code],nm,{type:'text/plain'});
+  try{if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:nm});S.lastFileBk=today();save();return true}}catch(e){if(e&&e.name==='AbortError')return false}
+  const a=document.createElement('a');a.href=URL.createObjectURL(file);a.download=nm;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000);S.lastFileBk=today();save();return true}
+/* 恢复前先给看一下内容，再点一次才真的覆盖 */
+function confirmRestore(o,from){const e=$('#bkStat');e.className='bkmsg';
+  e.innerHTML=`${esc(from)}没问题：里面有 ${Object.keys(o.srs||{}).length} 个学过的词、${o.food||0} 个苹果、宠物「${esc((o.pet&&o.pet.name)||'')}」。<div class="row" style="margin-top:8px"><button class="btn small coral" id="bkYes" type="button">确定恢复（会覆盖现在的记录）</button><button class="btn small" id="bkNo" type="button">取消</button></div>`;
+  e.scrollIntoView({block:'center'});
+  $('#bkYes').onclick=()=>{S=Object.assign(fresh(),o);S.pet=Object.assign({sp:'leaf'},S.pet);S.stepsV=S.stepsV||2;save();bubbleText='';talk=null;hud();toast('进度已恢复！');go('today')};
+  $('#bkNo').onclick=()=>{e.textContent=''}}
 function bindBackup(){
+  $('#bkFile').onclick=async()=>{const ok=await saveBackupFile();if(ok)toast('备份文件已生成，选「存储到文件」或发到微信')};
+  $('#bkOpen').onclick=()=>$('#bkOpenFile').click();
+  $('#bkOpenFile').onchange=async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;
+    try{const o=await readBackup(await f.text());confirmRestore(o,'备份文件')}catch(err){const st=$('#bkStat');st.className='bkmsg bad';st.textContent=err.msg||'这个文件不是备份文件'}};
+  $('#ghSave').onclick=async()=>{const token=$('#ghTok').value.trim(),name=$('#ghName').value.trim();if(!token)return toast('先填 GitHub 令牌');if(!name)return toast('给这台 iPad 起个备份名字');
+    const old=ghCfg();ghSet({token,name,gist:old.token===token?old.gist:''});$('#ghStat').textContent='正在连接 GitHub…';
+    try{await ghApi('/gists?per_page=1')}catch(err){$('#ghStat').textContent=ghErr(err);return}
+    const ok=await ghUpload(false);if(ok)renderDecks()};
+  const gu=$('#ghUp');if(gu)gu.onclick=()=>{$('#ghStat').textContent='正在上传…';ghUpload(false)};
+  const gd=$('#ghDown');if(gd)gd.onclick=async()=>{$('#ghStat').textContent='正在从云端读取…';
+    try{const o=await ghDownload();$('#ghStat').textContent=ghStatusText();confirmRestore(o,'云端备份')}catch(err){$('#ghStat').textContent=err.msg||ghErr(err)}};
   const st=(t,bad)=>{const e=$('#bkStat');e.textContent=t;e.className='bkmsg'+(bad?' bad':'')};
   $('#bkMake').onclick=async()=>{const o=$('#bkOut');o.value=await makeBackup();o.hidden=false;$('#bkCopy').hidden=false;const sh=$('#bkShare');if(sh)sh.hidden=!navigator.share;
     st(`已生成，共 ${o.value.length} 个字符。点「复制」，再发到微信「文件传输助手」保存`)};
@@ -2915,11 +2964,21 @@ function renderDecks(){
    <div class="card"><h2 style="font-size:21px">错词本</h2><p class="sub">出错次数最多的词。</p>
     ${wrong.length?`<div class="items">${wrong.map(([id,n])=>{const it=m.get(id);return `<div class="item"><button class="iconbtn" data-say="${esc(it.en)}" aria-label="朗读">🔊</button><div class="t"><b>${esc(it.en)}</b><span>${esc(it.zh)}</span></div><span class="chip">错 ${n}</span></div>`}).join('')}</div>`:'<div class="empty">还没有错词，太棒了！</div>'}</div>
    <div class="card stack" style="gap:10px"><h2 style="font-size:21px">备份 / 恢复进度</h2>
-    <p class="hint" style="margin:0">学习记录、苹果、宠物、徽章、导入的词库都存在这台手机的浏览器里。定期生成一段备份码，发到微信里存着；记录丢了或换手机时，粘贴回来就能全部恢复。</p>
-    <div class="row"><button class="btn go" id="bkMake">生成备份码</button><button class="btn" id="bkCopy" hidden>复制</button><button class="btn" id="bkShare" hidden>分享到微信</button></div>
-    <textarea id="bkOut" readonly hidden style="min-height:90px" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
-    <div><label class="lb" for="bkIn">恢复：把备份码粘贴到这里</label><textarea id="bkIn" style="min-height:90px" placeholder="长按这里，选「粘贴」" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea></div>
-    <div class="row"><button class="btn" id="bkPaste">📋 从剪贴板粘贴</button><button class="btn go" id="bkLoad">恢复进度</button></div>
+    <p class="hint" style="margin:0">学习记录、苹果、宠物、徽章、导入的词库都存在这台 iPad 的浏览器里。建议打开下面的 GitHub 云端备份（自动），再时不时存一份备份文件到 iCloud。</p>
+    <div class="secl" style="margin:0">💾 备份文件</div>
+    <div class="row"><button class="btn go" id="bkFile" type="button">💾 保存备份文件</button><button class="btn" id="bkOpen" type="button">📂 从文件恢复</button><input type="file" id="bkOpenFile" accept=".txt,.json,text/plain" hidden></div>
+    <p class="hint" style="margin:0">点「保存备份文件」后，在弹出的菜单里选「存储到文件」→ iCloud 云盘，或者发给微信「文件传输助手」。恢复时点「从文件恢复」选这个文件。</p>
+    <div class="secl" style="margin:8px 0 0">☁️ GitHub 云端备份（自动）</div>
+    ${(()=>{const c=ghCfg();return `<div><label class="lb" for="ghTok">GitHub 令牌（只勾选 gist 权限）</label><input type="password" id="ghTok" value="${esc(c.token||'')}" autocomplete="off" placeholder="ghp_ 开头的一串字符"></div>
+    <div><label class="lb" for="ghName">这台 iPad 的备份名字</label><input type="text" id="ghName" value="${esc(c.name||'')}" placeholder="例如：汉堡、陌芊（两台 iPad 用不同名字）"></div>
+    <div class="row"><button class="btn go" id="ghSave" type="button">保存并上传</button>${c.token?'<button class="btn" id="ghUp" type="button">☁️ 立即上传</button><button class="btn" id="ghDown" type="button">☁️ 从云端恢复</button>':''}</div>
+    <div class="bkmsg" id="ghStat">${ghStatusText()}</div>
+    <details class="help"><summary>怎么拿到 GitHub 令牌？</summary>1. 电脑或手机浏览器登录 github.com → 右上角头像 → Settings。<br>2. 左侧最下面 Developer settings → Personal access tokens → Tokens (classic) → Generate new token (classic)。<br>3. Note 随便写（如 背单词备份），Expiration 选 No expiration，<b>只勾选 gist</b>，最下面点 Generate token。<br>4. 复制 ghp_ 开头的令牌，粘贴到上面，点「保存并上传」。两台 iPad 可以用同一个令牌，备份名字填不一样的就行。<br>备份存在你账号下的私密 Gist 里，别人看不到；令牌只能读写 Gist，碰不到你的代码仓库。</details>`})()}
+    <details class="help"><summary>其他方式：备份码（文字）</summary>
+    <div class="row" style="margin-top:8px"><button class="btn" id="bkMake">生成备份码</button><button class="btn" id="bkCopy" hidden>复制</button><button class="btn" id="bkShare" hidden>分享到微信</button></div>
+    <textarea id="bkOut" readonly hidden style="min-height:90px;margin-top:8px" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
+    <div style="margin-top:8px"><label class="lb" for="bkIn">恢复：把备份码粘贴到这里</label><textarea id="bkIn" style="min-height:90px" placeholder="长按这里，选「粘贴」" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea></div>
+    <div class="row"><button class="btn" id="bkPaste">📋 从剪贴板粘贴</button><button class="btn go" id="bkLoad">恢复进度</button></div></details>
     <div class="bkmsg" id="bkStat"></div></div>
    <div class="row"><button class="btn small" id="resetBtn">重置所有进度…</button><span id="resetConfirm" hidden><button class="btn small coral" id="resetYes">确定清空（宠物、苹果、学习记录、导入的词库都会清掉）</button></span></div>
   </div>`;
