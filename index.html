@@ -519,10 +519,11 @@ const LVTXT={kid:{who:'中国小学生（6-10 岁）',words:'只用小学低年�
   mid:{who:'中国初中生（12-15 岁）',words:'用初中常见词汇，可以有简单的从句',len:'8-14 个词',story:'80-120 个词'},
   high:{who:'中国高中生（15-18 岁）',words:'用高中常见词汇，句式可以丰富一些（从句、非谓语等）',len:'10-18 个词',story:'100-150 个词'}};
 const lvt=()=>LVTXT[studyLv()];
-const APP_VER='2026.11.13';
-const WEAK_MAX=10; // 「不会的词」（巩固中 + 今天的新词）最多 10 个
+const APP_VER='2026.11.13c';
+const A_MAX=10,B_MAX=5;
+const WEAK_MAX=10; // 巩固（出过错的词）每天最多练 10 个
 const weakCount=()=>{const m=wordMap();return Object.entries(S.srs).filter(([id,r])=>r.weak&&!r.mastered&&!r.moved&&m.has(id)).length};
-const newQuota=()=>Math.max(0,Math.min(S.newPerDay,WEAK_MAX-weakCount()));
+const newQuota=()=>S.newPerDay||5; // 新词每天固定 5 个，不受巩固词数量影响
 /* 停练几天后：所有复习时间一起往后顺延，进度从上次停下的地方接着来，不会一下子堆一大堆 */
 function resumeGap(t){const la=[S.lastAct,S.gapDone].filter(Boolean).sort().pop();if(!la||la>=t||S.gapDone===t)return; // 已经顺延过的天数不再重复顺延
   const g=Math.round((Date.parse(t)-Date.parse(la))/864e5)-1;if(g<=0)return;
@@ -536,11 +537,13 @@ function buildDay(force){
   /* 之前开始了但没做完：不清空，带到今天接着做 */
   if(!force&&S.day&&!S.day.done&&S.day.started&&S.day.date<t&&dayItems().length){S.day.from=S.day.from||S.day.date;S.day.date=t;save();return}
   const map=wordMap();
-  const live=Object.entries(S.srs).filter(([id,r])=>!r.mastered&&!r.moved&&(r.due<=t||r.weak)&&map.has(id)); // 巩固中的词每天都练
-  const aIds=live.filter(e=>phaseOf(e[1])==='A').map(e=>e[0]),bIds=live.filter(e=>phaseOf(e[1])==='B').map(e=>e[0]);
+  const byDue=(a,b)=>a[1].due<b[1].due?-1:a[1].due>b[1].due?1:0;
+  const live=Object.entries(S.srs).filter(([id,r])=>!r.mastered&&!r.moved&&map.has(id)&&(r.due<=t||(r.weak&&phaseOf(r)==='C'))).sort(byDue); // 巩固中的词每天都练
+  /* 每天的量有上限：前几天的新词最多 10 个、第 4 天的词最多 5 个；积压的留到后面几天，按日期先后慢慢消化 */
+  const aIds=live.filter(e=>phaseOf(e[1])==='A').slice(0,A_MAX).map(e=>e[0]),bIds=live.filter(e=>phaseOf(e[1])==='B').slice(0,B_MAX).map(e=>e[0]);
   const due=live.filter(e=>phaseOf(e[1])==='C').sort((a,b)=>a[1].due<b[1].due?-1:a[1].due>b[1].due?1:0);
   /* 出过错的词（巩固中）每天都复习，排在最前面，不受复习数量限制（最多 10 个）；其余按遗忘曲线补满 */
-  const weak=due.filter(e=>e[1].weak).slice(0,10),rest=due.filter(e=>!e[1].weak).slice(0,Math.max(0,(S.maxReview||5)-weak.length));
+  const weak=due.filter(e=>e[1].weak).slice(0,WEAK_MAX),rest=due.filter(e=>!e[1].weak).slice(0,Math.max(0,(S.maxReview||5)-weak.length));
   const rev=weak.concat(rest).map(e=>e[0]);
   let nw=nextNew(newQuota());
   /* 保底：今天什么都没排到，但词库里还有没学的词 → 照常给新词；连新词也没有 → 把最快到期的旧词提前复习 */
@@ -1899,7 +1902,7 @@ function renderToday(){
       <div class="stats"><div class="stat"><b>${d.newIds.length}</b><span>新学单词</span></div><div class="stat"><b>${d.revIds.length}</b><span>复习单词</span></div><div class="stat"><b>${S.streak.n}</b><span>连续打卡天</span></div></div>
       ${missed.length?`<div><div class="secl">今天出过错的词（明天继续巩固，直到全对）</div>${chips(missed)}</div>`:'<div>今天一个都没错，太厉害了！</div>'}
       ${d.mastered&&d.mastered.length?`<div><div class="secl">新掌握的单词</div>${chips(d.mastered,'rev')}</div>`:''}
-      <p class="hint">明天要复习 ${dueOn(addDays(today(),1))} 个旧单词，再学 ${newQuota()} 个新词。${weakCount()?`（巩固中的词有 ${weakCount()} 个，不会的词最多 ${WEAK_MAX} 个，新词会相应减少）`:''}</p>
+      <p class="hint">明天要复习 ${dueOn(addDays(today(),1))} 个旧单词，再学 ${newQuota()} 个新词。${weakCount()?`巩固中的词有 ${weakCount()} 个，每天练最多 ${WEAK_MAX} 个，直到全对。`:''}</p>
       <div class="row center"><button class="btn go" data-go="pet">去喂${esc(S.pet.name)}</button>${learnedList().length+masteredList().length>=4?'<button class="btn" id="readQuiz">📖 阅读小测验</button>':''}${nextNew(1).length?'<button class="btn sun" id="extra">🍱 再学一组新词（加餐）</button>':''}</div></div></div>`;
     const rq=$('#readQuiz');if(rq)rq.onclick=()=>{const pool=learnedList().slice(0,10).map(x=>x.it);const items=pool.length>=4?pool:pool.concat(masteredList().slice(0,10-pool.length).map(x=>x.it));runReading(items)};
     const ex=$('#extra');if(ex)ex.onclick=()=>{S.day={date:today(),newIds:nextNew(S.newPerDay),revIds:[],aIds:[],bIds:[],curveIds:[],step:0,missed:{},started:false,done:false,extra:true,patRev:[],patNew:[]};save();renderToday()};
@@ -1917,13 +1920,14 @@ function renderToday(){
    <div><h2>${d.extra?'加餐':'今日任务'} · ${d.date.slice(5).replace('-','月')}日</h2><p class="sub">学 ${news.length} 个新单词${revs.length?`，练 ${revs.length} 个前几天的词`:''}，最后练几句日常对话。中途可以暂停，下次接着来。</p>
      ${S.gapDone===today()&&S.gapDays?`<div class="help">欢迎回来！停了 ${S.gapDays} 天，复习时间都往后顺延了，今天从上次的进度接着学。</div>`:''}
      ${d.from?`<div class="help">这是 ${d.from.slice(5).replace('-','月')}日 没做完的任务，进度都保留着，接着做完就行。</div>`:''}
-     ${!d.extra&&news.length<S.newPerDay&&weakCount()>=WEAK_MAX-S.newPerDay&&weakCount()?`<div class="help">还有 ${weakCount()} 个词在巩固中，不会的词最多 ${WEAK_MAX} 个，所以今天${news.length?`只学 ${news.length} 个`:'先不学'}新词。把巩固的词练会，新词就会多起来。</div>`:''}</div>
+     ${!d.extra&&weakCount()>WEAK_MAX?`<div class="help">巩固中的词有 ${weakCount()} 个，每天练最多 ${WEAK_MAX} 个，练对的会进入遗忘曲线复习。</div>`:''}
    <div class="card stack" style="gap:10px">
     ${(()=>{const ds=daySets(),A=revs.filter(i=>ds.A.has(i.id)),B=revs.filter(i=>d.bIds&&d.bIds.includes(i.id)),C=revs.filter(i=>!ds.A.has(i.id)&&!(d.bIds&&d.bIds.includes(i.id)));
       const sec=(t,l,cls)=>l.length?`<div><div class="secl">${t}</div><div class="wordchips">${l.map(i=>`<span class="wc ${cls}">${esc(i.en)}</span>`).join('')}</div></div>`:'';
       return sec('前几天的新词 · 第 2–3 天（跟读、配对、选择题、说中文）',A,'new')+sec('第 4 天（跟读、说中文、拼写、句子）',B,'rev')
         +sec('巩固（之前错过，今天全对才算过关）',C.filter(i=>S.srs[i.id]&&S.srs[i.id].weak),'miss')+sec('复习（按遗忘曲线到期）',C.filter(i=>!(S.srs[i.id]&&S.srs[i.id].weak)),'rev')})()}
     ${news.length?`<div><div class="secl">新单词</div><div class="wordchips">${news.map(i=>`<span class="wc new">${esc(i.en)} ${esc(i.zh)}</span>`).join('')}</div></div>`:''}
+    ${(()=>{if(d.extra)return '';const t=today();const n=Object.entries(S.srs).filter(([id,r])=>!r.mastered&&!r.moved&&m.has(id)&&r.due<=t&&phaseOf(r)!=='C').length-(d.aIds||[]).length-(d.bIds||[]).length;return n>0?`<div class="help">还有 ${n} 个前几天的词在排队，每天最多练 ${A_MAX+B_MAX} 个，接下来几天会按顺序练到。</div>`:''})()}
     ${noEx.length?`<div class="help">有 ${noEx.length} 个词还没有例句（${noEx.slice(0,4).map(i=>esc(i.en)).join('、')}${noEx.length>4?'…':''}），句子关卡会跳过它们。
       ${aiReady()?'<button class="btn small" id="aiT" style="margin-top:6px">✨ 让 AI 配例句</button>':'可以在词库里导入时写上例句。'}</div>`:''}
    </div>
@@ -2690,7 +2694,12 @@ async function aiFill(btn,items){
 
 /* 备份码：新版用 gzip 压缩（更短、不容易复制断），并带长度，复制不完整时能提示出来；旧的 DOUDOU1 也能读 */
 const u8ToB64=u=>{let s='';for(let i=0;i<u.length;i+=8192)s+=String.fromCharCode.apply(null,u.subarray(i,i+8192));return btoa(s)};
-async function makeBackup(){const j=JSON.stringify(S);
+/* 备份里一起带上这台设备的设置：豆包 AI、豆包语音识别、GitHub 备份令牌（换新设备恢复后不用重新填） */
+function cfgSnap(){const o={};for(const k of ['doudou-ai','doudou-asr']){try{const v=JSON.parse(localStorage.getItem(k)||'null');if(v)o[k]=v}catch(e){}}return o} // GitHub 令牌不放进备份，新设备上自己填
+function applyCfg(o){const c=o&&o._cfg;if(o)delete o._cfg;if(!c)return false;let n=0;
+  for(const k of ['doudou-ai','doudou-asr']){if(c[k]){try{localStorage.setItem(k,JSON.stringify(c[k]));n++}catch(e){}}}
+  return n>0}
+async function makeBackup(){const j=JSON.stringify(Object.assign({},S,{_cfg:cfgSnap()}));
   try{if(window.CompressionStream){const st=new Blob([j]).stream().pipeThrough(new CompressionStream('gzip'));const b64=u8ToB64(new Uint8Array(await new Response(st).arrayBuffer()));return 'DOUDOU2:'+b64.length+':'+b64}}catch(e){}
   return 'DOUDOU1:'+btoa(unescape(encodeURIComponent(j)))}
 async function readBackup(raw){
@@ -2739,9 +2748,9 @@ async function saveBackupFile(){const code=await makeBackup();const nm=`背单�
   const a=document.createElement('a');a.href=URL.createObjectURL(file);a.download=nm;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000);S.lastFileBk=today();save();return true}
 /* 恢复前先给看一下内容，再点一次才真的覆盖 */
 function confirmRestore(o,from){const e=$('#bkStat');e.className='bkmsg';
-  e.innerHTML=`${esc(from)}没问题：里面有 ${Object.keys(o.srs||{}).length} 个学过的词、${o.food||0} 个苹果、宠物「${esc((o.pet&&o.pet.name)||'')}」。<div class="row" style="margin-top:8px"><button class="btn small coral" id="bkYes" type="button">确定恢复（会覆盖现在的记录）</button><button class="btn small" id="bkNo" type="button">取消</button></div>`;
+  e.innerHTML=`${esc(from)}没问题：里面有 ${Object.keys(o.srs||{}).length} 个学过的词、${o.food||0} 个苹果、宠物「${esc((o.pet&&o.pet.name)||'')}」${o._cfg&&Object.keys(o._cfg).length?'，还有 '+Object.keys(o._cfg).map(k=>({'doudou-ai':'AI 设置','doudou-asr':'语音识别设置','doudou-gh':'GitHub 令牌'})[k]).join('、'):''}。<div class="row" style="margin-top:8px"><button class="btn small coral" id="bkYes" type="button">确定恢复（会覆盖现在的记录）</button><button class="btn small" id="bkNo" type="button">取消</button></div>`;
   e.scrollIntoView({block:'center'});
-  $('#bkYes').onclick=()=>{S=Object.assign(fresh(),o);S.pet=Object.assign({sp:'leaf'},S.pet);S.stepsV=S.stepsV||2;save();bubbleText='';talk=null;hud();toast('进度已恢复！');go('today')};
+  $('#bkYes').onclick=()=>{const cf=applyCfg(o);S=Object.assign(fresh(),o);S.pet=Object.assign({sp:'leaf'},S.pet);S.stepsV=S.stepsV||2;save();bubbleText='';talk=null;hud();toast(cf?'进度和 AI / 语音识别设置都恢复好了！':'进度已恢复！');go('today');if(cf)setTimeout(()=>location.reload(),1500)};
   $('#bkNo').onclick=()=>{e.textContent=''}}
 function bindBackup(){
   $('#bkFile').onclick=async()=>{const ok=await saveBackupFile();if(ok)toast('备份文件已生成，选「存储到文件」或发到微信')};
@@ -2773,7 +2782,7 @@ function bindBackup(){
     let o;try{o=await readBackup(raw)}catch(e){toast(e.msg||'备份码不对');return st(e.msg||'备份码不对',true)}
     if(!ld.dataset.armed){ld.dataset.armed='1';ld.textContent='确定恢复（会覆盖现在的记录）';ld.classList.add('coral');
       return st(`备份码没问题：里面有 ${Object.keys(o.srs||{}).length} 个学过的词、${o.food||0} 个苹果、宠物「${(o.pet&&o.pet.name)||''}」。再点一次按钮就恢复`)}
-    S=Object.assign(fresh(),o);S.pet=Object.assign({sp:'leaf'},S.pet);S.stepsV=S.stepsV||2;save();bubbleText='';talk=null;hud();toast('进度已恢复！');go('today')};
+    const cf=applyCfg(o);S=Object.assign(fresh(),o);S.pet=Object.assign({sp:'leaf'},S.pet);S.stepsV=S.stepsV||2;save();bubbleText='';talk=null;hud();toast(cf?'进度和 AI / 语音识别设置都恢复好了！':'进度已恢复！');go('today');if(cf)setTimeout(()=>location.reload(),1500)};
 }
 const DUP='dupmaster',DUP_NAME='重复导入（已掌握）';
 function splitMastered(words){const fresh=[],dup=[];for(const w of words)(isMastered(w.en)?dup:fresh).push(w);
@@ -2997,7 +3006,7 @@ function renderDecks(){
     <p class="hint" style="margin:0">学习记录、苹果、宠物、徽章、导入的词库都存在这台 iPad 的浏览器里。建议打开下面的 GitHub 云端备份（自动），再时不时存一份备份文件到 iCloud。</p>
     <div class="secl" style="margin:0">💾 备份文件</div>
     <div class="row"><button class="btn go" id="bkFile" type="button">💾 保存备份文件</button><button class="btn" id="bkOpen" type="button">📂 从文件恢复</button><button class="btn" id="bkClip" type="button">📋 粘贴恢复</button><input type="file" id="bkOpenFile" hidden></div>
-    <p class="hint" style="margin:0">点「保存备份文件」后，在弹出的菜单里选「存储到文件」→ iCloud 云盘，或者发给微信「文件传输助手」。恢复时点「从文件恢复」选这个文件。</p>
+    <p class="hint" style="margin:0">点「保存备份文件」后，在弹出的菜单里选「存储到文件」→ iCloud 云盘，或者发给微信「文件传输助手」。恢复时点「从文件恢复」选这个文件。<br>备份里也带着 AI 和语音识别的设置（含 Key），换新设备恢复后不用重新填；GitHub 令牌不在备份里，需要时在下面填一次。<b>备份文件不要发给别人。</b></p>
     <details class="help"><summary>备份在微信里，怎么恢复？</summary>微信里的文件「从文件恢复」选不到，用下面任一种：<br><b>方法一（最简单）：</b>在微信里点开备份文件 → 长按文字 → 全选 → 复制，回到这里点「📋 粘贴恢复」。<br><b>方法二：</b>在微信里点开备份文件 → 右上角「···」→「用其他应用打开」→「存储到文件」，存好后再点「📂 从文件恢复」去选。</details>
     <div class="secl" style="margin:8px 0 0">☁️ GitHub 云端备份（自动）</div>
     ${(()=>{const c=ghCfg();return `<div><label class="lb" for="ghTok">GitHub 令牌（只勾选 gist 权限）</label><input type="password" id="ghTok" value="${esc(c.token||'')}" autocomplete="off" placeholder="ghp_ 开头的一串字符"></div>
