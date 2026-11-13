@@ -519,7 +519,7 @@ const LVTXT={kid:{who:'中国小学生（6-10 岁）',words:'只用小学低年�
   mid:{who:'中国初中生（12-15 岁）',words:'用初中常见词汇，可以有简单的从句',len:'8-14 个词',story:'80-120 个词'},
   high:{who:'中国高中生（15-18 岁）',words:'用高中常见词汇，句式可以丰富一些（从句、非谓语等）',len:'10-18 个词',story:'100-150 个词'}};
 const lvt=()=>LVTXT[studyLv()];
-const APP_VER='2026.11.13d';
+const APP_VER='2026.11.13f';
 const A_MAX=10,B_MAX=5;
 const WEAK_MAX=10; // 巩固（出过错的词）每天最多练 10 个
 const weakCount=()=>{const m=wordMap();return Object.entries(S.srs).filter(([id,r])=>r.weak&&!r.mastered&&!r.moved&&m.has(id)).length};
@@ -2884,14 +2884,14 @@ async function makeReading(items,basic){
     const r=await aiJSON(`请用下面这些英语单词，为${lvt().who}写一篇连贯、有趣的小短文（${lvt().story}，${lvt().words}），每个单词至少出现一次（可以用复数、过去式等简单变形）。
 再出 4 道阅读理解选择题：题目和选项用简单英文；考对短文内容和这些单词意思的理解（至少 2 道题直接考某个单词在文中的意思）；每题 3 个选项，只有一个正确，答案要能从短文里找到。
 单词：${items.map(i=>i.en+'（'+i.zh+'）').join('、')}
-只回复 JSON：{"title":"英文标题","story":"英文短文","storyZh":"短文中文翻译","questions":[{"q":"英文题目","qZh":"题目的中文","options":["选项1","选项2","选项3"],"answer":0,"why":"一句中文解释","word":"这题主要考的单词，没有就留空"}]}`,60000);
+只回复 JSON：{"title":"英文标题","story":"英文短文","storyZh":"短文中文翻译","questions":[{"q":"英文题目","qZh":"题目的中文","options":["选项1","选项2","选项3"],"answer":0,"evidence":"短文里能找到答案的那一句，原样摘抄","word":"这题主要考的单词，没有就留空"}]}`,60000);
     const qs=(r&&Array.isArray(r.questions)?r.questions:[]).filter(x=>x&&x.q&&Array.isArray(x.options)&&x.options.length>=2&&+x.answer>=0&&+x.answer<x.options.length);
-    if(r&&r.story&&qs.length)return {title:String(r.title||'Reading'),story:String(r.story),storyZh:String(r.storyZh||''),qs:qs.map(x=>({q:String(x.q),qZh:String(x.qZh||''),options:x.options.map(String),answer:+x.answer,why:String(x.why||''),word:String(x.word||'')})),ai:true}
+    if(r&&r.story&&qs.length)return {title:String(r.title||'Reading'),story:String(r.story),storyZh:String(r.storyZh||''),qs:qs.map(x=>({q:String(x.q),qZh:String(x.qZh||''),options:x.options.map(String),answer:+x.answer,why:String(x.why||''),evidence:String(x.evidence||''),word:String(x.word||'')})),ai:true}
     if(tryN)return {fail:'AI 编的短文格式不对'}}catch(e){if(tryN||(e&&AI_OFF.includes(e.code)))return {fail:aiErrMsg(e)}}}
   /* 例句小练习（没有 AI 时）：把例句列出来，题目考词义。这不是短文，标题写清楚 */
   const withEx=items.filter(hasEx);const story=(withEx.length?withEx:items).map((i,k)=>(k+1)+'. '+(i.ex||(i.en+'.'))).join('\n');
   const qs=shuffle(items).slice(0,5).map(it=>{const opts=shuffle([it.zh].concat(shuffle(allItems().filter(x=>x.zh!==it.zh)).slice(0,2).map(x=>x.zh)));
-    return {q:`In the story, what does "${it.en}" mean?`,qZh:`短文里的 ${it.en} 是什么意思？`,options:opts,answer:opts.indexOf(it.zh),why:`${it.en} = ${it.zh}`,word:it.en}});
+    return {q:`In the story, what does "${it.en}" mean?`,qZh:`短文里的 ${it.en} 是什么意思？`,options:opts,answer:opts.indexOf(it.zh),why:`${it.en} = ${it.zh}`,evidence:it.ex||it.en,word:it.en}});
   return {title:'例句小练习',basic:true,story,storyZh:withEx.map(i=>i.exZh).join(''),qs,ai:false}}
 async function runReading(items,basic){
   const ctx={tok:++RUN,mode:'free',items,pool:items,ok:0,step:{ico:'📖',name:'阅读理解'}};
@@ -2910,32 +2910,51 @@ async function runReading(items,basic){
   const keyset=keys.map(k=>k.toLowerCase().split(' ')[0]);
   const isKey=x=>{const l=x.toLowerCase();return keyset.some(k=>l===k||l===k+'s'||l===k+'es'||l===k+'ed'||l===k+'d'||l===k+'ing'||(k.endsWith('e')&&l===k.slice(0,-1)+'ing')||(k.endsWith('y')&&(l===k.slice(0,-1)+'ies'||l===k.slice(0,-1)+'ied')))};
   const mark=t=>String(t).split(/([A-Za-z][A-Za-z'’-]*)/).map((p,i)=>i%2?`<span class="tw" data-tw="${esc(p)}">${isKey(p)?'<mark>'+esc(p)+'</mark>':hintWrap(p)}</span>`:esc(p)).join('');
-  /* 第 1 步：读短文 */
-  await new Promise(res=>{
-    $('#gbody').innerHTML=`<div class="card stack" style="gap:10px"><div class="ptitle center">${esc(R.title)}</div>
-      <div class="passage" id="rdStory" style="font-size:20px;line-height:1.9;${R.basic?'white-space:pre-line':''}">${mark(R.story)}</div>
-      ${R.storyZh?`<div class="hint" id="rdZh" hidden style="font-size:16px;line-height:1.8">${esc(R.storyZh)}</div>`:''}
-      <div class="row center"><button class="btn" id="rdSay">🔊 听短文</button>${R.storyZh?'<button class="btn" id="rdZhBtn">看中文</button>':''}</div>
-      <p class="hint center" style="margin:0">先大声读一遍短文。不认识的词点一下，会显示中文并加入生词本。</p>
-      <div class="row center"><button class="btn go" id="rdGo" style="font-size:18px;padding:12px 24px">读完了，开始答题 →</button></div></div>`;
-    $('#rdStory').querySelectorAll('.tw').forEach(el=>el.onclick=()=>tapWord(el,el.dataset.tw,R.story));
-    $('#rdSay').onclick=()=>say(R.story);const zb=$('#rdZhBtn');if(zb)zb.onclick=()=>{const z=$('#rdZh');z.hidden=!z.hidden;zb.textContent=z.hidden?'看中文':'收起中文'};
-    $('#rdGo').onclick=()=>{hush();res()}});
-  if(!alive(ctx))return;
-  /* 第 2 步：答题 */
-  const wrong=[];let right=0;
-  for(let k=0;k<R.qs.length;k++){const q=R.qs[k];
-    await new Promise(res=>{$('#fRound').textContent=`第 ${k+1}/${R.qs.length} 题`;$('#progBar').style.width=Math.round(k/R.qs.length*100)+'%';
-      $('#gbody').innerHTML=`<details class="card" style="padding:10px 14px"><summary class="hint">再看一眼短文</summary><div class="passage" style="font-size:17px;line-height:1.8;margin-top:8px">${mark(R.story)}</div></details>
-        <div class="card prompt"><div class="sent" style="font-size:21px">${esc(q.q)}</div>${q.qZh?`<div class="hint">${esc(q.qZh)}</div>`:''}</div>
-        <div class="opts" style="margin-top:12px">${q.options.map((o,j)=>`<button class="opt enopt" data-j="${j}">${esc(o)}</button>`).join('')}</div><div id="rdFb" class="sayfb" hidden></div>`;
-      let done=false;$('#gbody').querySelectorAll('.opt').forEach(b=>b.onclick=()=>{if(done)return;done=true;const j=+b.dataset.j,ok=j===q.answer;
-        $('#gbody').querySelectorAll('.opt')[q.answer].classList.add('right');if(!ok){b.classList.add('wrong','bad');wrong.push(q)}else{right++;good(ctx,b)}beep(ok?'ok':'bad');
-        const fb=$('#rdFb');fb.hidden=false;fb.className='sayfb '+(ok?'ok':'no');fb.innerHTML=`${ok?'✓ 答对了！':'答错了'}${q.why?'<br><small>'+esc(q.why)+'</small>':''}<div class="row center" style="margin-top:8px"><button class="btn small go" id="rdNext">${k+1<R.qs.length?'下一题':'看结果'}</button></div>`;
-        $('#rdNext').onclick=()=>res()})});
-    if(!alive(ctx))return}
+  /* 短文一直显示在上面，下面直接答题；答对自动下一题，可以回上一题；答错要在原文里点出能找到答案的句子 */
+  if(!document.getElementById('rdCss')){const st=document.createElement('style');st.id='rdCss';st.textContent=`.rdstory{max-height:46vh;overflow:auto}
+    .rdstory.findmode .rs{background:rgba(255,214,90,.22);border-radius:6px;cursor:pointer;box-shadow:0 0 0 1px rgba(230,170,30,.35)}
+    .rs.found{background:#c9f2d3!important;box-shadow:0 0 0 2px #38a865!important;border-radius:6px}.rs.nope{background:#ffd6d0!important;border-radius:6px}
+    .rs.hintme{background:#fff0a0!important;box-shadow:0 0 0 2px #f2b32a!important;border-radius:6px;animation:rsPulse 1s ease-in-out 3}
+    @keyframes rsPulse{50%{box-shadow:0 0 0 5px rgba(242,179,42,.45)}}`;document.head.appendChild(st)}
+  const sents=[];String(R.story).split(/\n+/).forEach((par,pi)=>{if(pi)sents.push('\n');(par.match(/[^.!?]+[.!?]+["'”’)]*\s*|[^.!?]+$/g)||[]).forEach(t=>{if(t.trim())sents.push(t)})});
+  const STOPW=new Set('a an the is are was were be been to of in on at and or for it its he she they we i you his her their my your our this that these those what who whom where when why how do does did with by from as so but not no yes can will would should could has have had there here then than very'.split(' '));
+  const toks=t=>String(t).toLowerCase().match(/[a-z']+/g)||[];
+  const evIdx=q=>{const ev=String(q.evidence||'').trim();const tg=(ev?toks(ev):toks(q.q+' '+q.options[q.answer])).filter(w=>!STOPW.has(w));if(!tg.length)return -1;let best=-1,bs=0;
+    sents.forEach((t,i)=>{if(t==='\n')return;const w=toks(t);const ws=new Set(w);let sc=0;tg.forEach(x=>{if(ws.has(x))sc++});sc=sc/Math.sqrt(Math.max(1,w.length)*tg.length);if(sc>bs){bs=sc;best=i}});return bs>0?best:-1};
+  const n=R.qs.length,stt=R.qs.map(q=>({pick:null,ok:null,found:false,tries:0,ev:evIdx(q)}));let cur=0,right=0;const wrong=[];
+  $('#gbody').innerHTML=`<div class="card stack rdstory" id="rdBox" style="gap:8px"><div class="ptitle center">${esc(R.title)}</div>
+      <div class="passage" id="rdStory" style="font-size:20px;line-height:1.9">${sents.map((t,i)=>t==='\n'?'<br>':`<span class="rs" data-si="${i}">${mark(t)}</span>`).join('')}</div>
+      <div class="row center"><button class="btn small" id="rdSay">🔊 听短文</button><span class="hint" style="margin:0">不认识的词点一下，会显示中文并加入生词本</span></div></div>
+    <div id="rdQA" style="margin-top:12px"></div>`;
+  $('#rdSay').onclick=()=>say(R.story);
+  const box=$('#rdBox'),story=$('#rdStory');
+  const finding=()=>{const x=stt[cur];return x.pick!==null&&!x.ok&&!x.found};
+  const paint=()=>{story.querySelectorAll('.rs').forEach(e=>e.classList.remove('found','nope','hintme'));const x=stt[cur];
+    box.classList.toggle('findmode',finding());
+    if(x.found&&x.ev>=0){const e=story.querySelector(`[data-si="${x.ev}"]`);if(e)e.classList.add('found')}
+    if(finding()&&x.tries>=2&&x.ev>=0){const e=story.querySelector(`[data-si="${x.ev}"]`);if(e){e.classList.add('hintme');e.scrollIntoView({block:'nearest'})}}};
+  let finish;const done=new Promise(r=>finish=r);let advT=0;
+  const go=k=>{clearTimeout(advT);if(!alive(ctx))return;if(k>=n)return finish();cur=Math.max(0,k);drawQ()};
+  const autoNext=ms=>{const me=cur;clearTimeout(advT);advT=setTimeout(()=>{if(alive(ctx)&&cur===me)go(me+1)},ms)};
+  function drawQ(){const q=R.qs[cur],x=stt[cur];$('#fRound').textContent=`第 ${cur+1}/${n} 题`;$('#progBar').style.width=Math.round(stt.filter(y=>y.pick!==null&&(y.ok||y.found)).length/n*100)+'%';
+    const can=x.pick!==null&&(x.ok||x.found);
+    let fb='';if(x.pick!==null){fb=x.ok?'✓ Correct!':x.found?`✓ 找到了！The answer is: <b>${esc(q.options[q.answer])}</b>`:
+      `✗ Not quite. 找一找：在上面的短文里<b>点出能找到答案的那一句</b>。${x.tries>=2&&x.ev>=0?'<br><small>提示：答案在黄色闪烁的那句，点它一下。</small>':x.tries?'<br><small>不是这句，再找找。</small>':''}`}
+    $('#rdQA').innerHTML=`<div class="card prompt"><div class="sent" style="font-size:21px">${esc(q.q)}</div></div>
+      <div class="opts" style="margin-top:12px">${q.options.map((o,j)=>{const c=x.pick===null?'':j===q.answer&&(x.ok||x.found)?'right':j===x.pick&&!x.ok?'wrong bad':'';return `<button class="opt enopt ${c}" data-j="${j}" ${x.pick!==null?'disabled':''}>${esc(o)}</button>`}).join('')}</div>
+      ${fb?`<div class="sayfb ${x.ok||x.found?'ok':'no'}" style="margin-top:10px">${fb}</div>`:''}
+      <div class="row" style="justify-content:space-between;margin-top:12px"><button class="btn small" id="rdPrev" ${cur?'':'disabled'}>← 上一题</button><button class="btn small go" id="rdNext" ${can?'':'disabled'}>${cur+1<n?'下一题 →':'看结果 →'}</button></div>`;
+    paint();
+    $('#rdQA').querySelectorAll('.opt').forEach(b=>b.onclick=()=>{if(x.pick!==null)return;const j=+b.dataset.j;x.pick=j;x.ok=j===q.answer;beep(x.ok?'ok':'bad');
+      if(x.ok){right++;good(ctx,b);drawQ();autoNext(1100)}else{wrong.push(q);if(x.ev<0)x.found=true;drawQ();box.scrollTop=0;box.scrollIntoView({block:'start',behavior:'smooth'})}});
+    $('#rdPrev').onclick=()=>go(cur-1);$('#rdNext').onclick=()=>{if(can)go(cur+1)}}
+  story.addEventListener('click',e=>{
+    if(finding()){const sp=e.target.closest('.rs');if(!sp)return;e.stopPropagation();const x=stt[cur],i=+sp.dataset.si;
+      if(i===x.ev){x.found=true;beep('ok');drawQ();autoNext(1600)}else{x.tries++;beep('bad');sp.classList.add('nope');setTimeout(()=>sp.classList.remove('nope'),700);drawQ()}return}
+    const w=e.target.closest('.tw');if(w){const sp=w.closest('.rs');tapWord(w,w.dataset.tw,sp?sp.textContent:R.story)}},true);
+  drawQ();await done;if(!alive(ctx))return;
   /* 结果 */
-  const n=R.qs.length,weakW=[...new Set(wrong.map(q=>q.word.toLowerCase()).filter(Boolean))].map(w=>items.find(i=>i.en.toLowerCase()===w)).filter(Boolean);
+  const weakW=[...new Set(wrong.map(q=>q.word.toLowerCase()).filter(Boolean))].map(w=>items.find(i=>i.en.toLowerCase()===w)).filter(Boolean);
   S.readings=(S.readings||[]).concat({date:today(),words:keys,score:right,total:n}).slice(-50);S.food+=right>=n?3:1;save();hud();beep('win');$('#progBar').style.width='100%';
   $('#gbody').innerHTML=`<div class="card result stack"><div class="ptitle">${right===n?'🎉 全对！这些词掌握得很好':right>=n/2?`答对 ${right}/${n} 题，不错！`:`答对 ${right}/${n} 题，还要加油`}</div>
     <div class="big">${'⭐'.repeat(right)}${'☆'.repeat(n-right)}</div><p>奖励 ${right>=n?3:1} 个苹果 🍎</p>
