@@ -520,10 +520,10 @@ const LVTXT={kid:{who:'中国小学生（6-10 岁）',words:'只用小学低年�
   high:{who:'中国高中生（15-18 岁）',words:'用高中常见词汇，句式可以丰富一些（从句、非谓语等）',len:'10-18 个词',story:'100-150 个词'}};
 const lvt=()=>LVTXT[studyLv()];
 const WEAK_MAX=10; // 「不会的词」（巩固中 + 今天的新词）最多 10 个
-const weakCount=()=>Object.values(S.srs).filter(r=>r.weak&&!r.mastered&&!r.moved).length;
+const weakCount=()=>{const m=wordMap();return Object.entries(S.srs).filter(([id,r])=>r.weak&&!r.mastered&&!r.moved&&m.has(id)).length};
 const newQuota=()=>Math.max(0,Math.min(S.newPerDay,WEAK_MAX-weakCount()));
 /* 停练几天后：所有复习时间一起往后顺延，进度从上次停下的地方接着来，不会一下子堆一大堆 */
-function resumeGap(t){const la=S.lastAct;if(!la||la>=t||S.gapDone===t)return;
+function resumeGap(t){const la=[S.lastAct,S.gapDone].filter(Boolean).sort().pop();if(!la||la>=t||S.gapDone===t)return; // 已经顺延过的天数不再重复顺延
   const g=Math.round((Date.parse(t)-Date.parse(la))/864e5)-1;if(g<=0)return;
   const sh=d=>d?addDays(d,g):d;
   for(const r of Object.values(S.srs||{}))if(!r.mastered&&r.due)r.due=sh(r.due);
@@ -531,17 +531,21 @@ function resumeGap(t){const la=S.lastAct;if(!la||la>=t||S.gapDone===t)return;
   for(const x of Object.values(S.sents||{}))if(x.due)x.due=sh(x.due);
   S.gapDone=t;S.gapDays=g;save()}
 function buildDay(force){
-  const t=today();resumeGap(t);if(!force&&S.day&&S.day.date===t)return;
+  const t=today();resumeGap(t);if(!force&&S.day&&S.day.date===t&&(S.day.started||S.day.done||dayItems().length))return; // 今天的计划是空的就重新排
   /* 之前开始了但没做完：不清空，带到今天接着做 */
   if(!force&&S.day&&!S.day.done&&S.day.started&&S.day.date<t&&dayItems().length){S.day.from=S.day.from||S.day.date;S.day.date=t;save();return}
   const map=wordMap();
-  const live=Object.entries(S.srs).filter(([id,r])=>!r.mastered&&!r.moved&&r.due<=t&&map.has(id));
+  const live=Object.entries(S.srs).filter(([id,r])=>!r.mastered&&!r.moved&&(r.due<=t||r.weak)&&map.has(id)); // 巩固中的词每天都练
   const aIds=live.filter(e=>phaseOf(e[1])==='A').map(e=>e[0]),bIds=live.filter(e=>phaseOf(e[1])==='B').map(e=>e[0]);
   const due=live.filter(e=>phaseOf(e[1])==='C').sort((a,b)=>a[1].due<b[1].due?-1:a[1].due>b[1].due?1:0);
   /* 出过错的词（巩固中）每天都复习，排在最前面，不受复习数量限制（最多 10 个）；其余按遗忘曲线补满 */
   const weak=due.filter(e=>e[1].weak).slice(0,10),rest=due.filter(e=>!e[1].weak).slice(0,Math.max(0,(S.maxReview||5)-weak.length));
   const rev=weak.concat(rest).map(e=>e[0]);
-  S.day={date:t,newIds:nextNew(newQuota()),revIds:aIds.concat(bIds,rev),aIds,bIds,curveIds:rest.map(e=>e[0]),step:0,missed:{},started:false,done:false,...patPlan()};save();
+  let nw=nextNew(newQuota());
+  /* 保底：今天什么都没排到，但词库里还有没学的词 → 照常给新词；连新词也没有 → 把最快到期的旧词提前复习 */
+  if(!aIds.length&&!bIds.length&&!rev.length&&!nw.length){nw=nextNew(Math.max(3,S.newPerDay||5));
+    if(!nw.length){const soon=Object.entries(S.srs).filter(([id,r])=>!r.mastered&&!r.moved&&map.has(id)&&r.due).sort((a,b)=>a[1].due<b[1].due?-1:1).slice(0,S.maxReview||5);rev.push(...soon.map(e=>e[0]));rest.push(...soon)}}
+  S.day={date:t,newIds:nw,revIds:aIds.concat(bIds,rev),aIds,bIds,curveIds:rest.map(e=>e[0]),step:0,missed:{},started:false,done:false,...patPlan()};save();
 }
 /* 新词顺序：生词本最多 2 个 → 使用中的词库（包括新加进去的词）→ 生词本剩下的 → 其他词库。学过的同一个单词不重复学 */
 function nextNew(n){const d=deck(),my=myDeck();const unl=dk=>dk?dk.items.filter(it=>!S.srs[it.id]):[];
@@ -1902,7 +1906,7 @@ function renderToday(){
   }
   if(!items.length){
     $('#view').innerHTML=`<div class="card result stack"><div class="ptitle">今天没有要学的单词</div>
-      <p>「${esc(deck().name)}」里的单词都学过了，也没有到期要复习的旧单词。</p>
+      <p>所有词库里的单词都学过了，也没有要复习的旧单词。</p>
       <div class="row center"><button class="btn go" data-go="decks">去导入新单词或换词库</button></div></div>`;return;
   }
   const revs=d.revIds.map(id=>m.get(id)).filter(Boolean),news=d.newIds.map(id=>m.get(id)).filter(Boolean);
