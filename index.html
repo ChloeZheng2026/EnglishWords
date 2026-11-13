@@ -519,7 +519,7 @@ const LVTXT={kid:{who:'中国小学生（6-10 岁）',words:'只用小学低年�
   mid:{who:'中国初中生（12-15 岁）',words:'用初中常见词汇，可以有简单的从句',len:'8-14 个词',story:'80-120 个词'},
   high:{who:'中国高中生（15-18 岁）',words:'用高中常见词汇，句式可以丰富一些（从句、非谓语等）',len:'10-18 个词',story:'100-150 个词'}};
 const lvt=()=>LVTXT[studyLv()];
-const APP_VER='2026.11.13c';
+const APP_VER='2026.11.13d';
 const A_MAX=10,B_MAX=5;
 const WEAK_MAX=10; // 巩固（出过错的词）每天最多练 10 个
 const weakCount=()=>{const m=wordMap();return Object.entries(S.srs).filter(([id,r])=>r.weak&&!r.mastered&&!r.moved&&m.has(id)).length};
@@ -2695,9 +2695,10 @@ async function aiFill(btn,items){
 /* 备份码：新版用 gzip 压缩（更短、不容易复制断），并带长度，复制不完整时能提示出来；旧的 DOUDOU1 也能读 */
 const u8ToB64=u=>{let s='';for(let i=0;i<u.length;i+=8192)s+=String.fromCharCode.apply(null,u.subarray(i,i+8192));return btoa(s)};
 /* 备份里一起带上这台设备的设置：豆包 AI、豆包语音识别、GitHub 备份令牌（换新设备恢复后不用重新填） */
-function cfgSnap(){const o={};for(const k of ['doudou-ai','doudou-asr']){try{const v=JSON.parse(localStorage.getItem(k)||'null');if(v)o[k]=v}catch(e){}}return o} // GitHub 令牌不放进备份，新设备上自己填
+function cfgSnap(){const o={};for(const k of ['doudou-ai','doudou-asr','doudou-gh']){try{const v=JSON.parse(localStorage.getItem(k)||'null');if(v)o[k]=k==='doudou-gh'?(v.token?{token:v.token}:null):v;if(!o[k])delete o[k]}catch(e){}}return o} // GitHub 只备份令牌，备份名字每台设备自己填
 function applyCfg(o){const c=o&&o._cfg;if(o)delete o._cfg;if(!c)return false;let n=0;
   for(const k of ['doudou-ai','doudou-asr']){if(c[k]){try{localStorage.setItem(k,JSON.stringify(c[k]));n++}catch(e){}}}
+  if(c['doudou-gh']&&c['doudou-gh'].token){const cur=ghCfg();ghSet({token:c['doudou-gh'].token,gist:cur.token===c['doudou-gh'].token?cur.gist:''});n++} // 只恢复令牌，不动这台设备的备份名字
   return n>0}
 async function makeBackup(){const j=JSON.stringify(Object.assign({},S,{_cfg:cfgSnap()}));
   try{if(window.CompressionStream){const st=new Blob([j]).stream().pipeThrough(new CompressionStream('gzip'));const b64=u8ToB64(new Uint8Array(await new Response(st).arrayBuffer()));return 'DOUDOU2:'+b64.length+':'+b64}}catch(e){}
@@ -2750,7 +2751,7 @@ async function saveBackupFile(){const code=await makeBackup();const nm=`背单�
 function confirmRestore(o,from){const e=$('#bkStat');e.className='bkmsg';
   e.innerHTML=`${esc(from)}没问题：里面有 ${Object.keys(o.srs||{}).length} 个学过的词、${o.food||0} 个苹果、宠物「${esc((o.pet&&o.pet.name)||'')}」${o._cfg&&Object.keys(o._cfg).length?'，还有 '+Object.keys(o._cfg).map(k=>({'doudou-ai':'AI 设置','doudou-asr':'语音识别设置','doudou-gh':'GitHub 令牌'})[k]).join('、'):''}。<div class="row" style="margin-top:8px"><button class="btn small coral" id="bkYes" type="button">确定恢复（会覆盖现在的记录）</button><button class="btn small" id="bkNo" type="button">取消</button></div>`;
   e.scrollIntoView({block:'center'});
-  $('#bkYes').onclick=()=>{const cf=applyCfg(o);S=Object.assign(fresh(),o);S.pet=Object.assign({sp:'leaf'},S.pet);S.stepsV=S.stepsV||2;save();bubbleText='';talk=null;hud();toast(cf?'进度和 AI / 语音识别设置都恢复好了！':'进度已恢复！');go('today');if(cf)setTimeout(()=>location.reload(),1500)};
+  $('#bkYes').onclick=()=>{const cf=applyCfg(o);S=Object.assign(fresh(),o);S.pet=Object.assign({sp:'leaf'},S.pet);S.stepsV=S.stepsV||2;save();bubbleText='';talk=null;hud();toast(cf?'进度和 AI / 语音识别 / GitHub 令牌都恢复好了！':'进度已恢复！');go('today');if(cf)setTimeout(()=>location.reload(),1500)};
   $('#bkNo').onclick=()=>{e.textContent=''}}
 function bindBackup(){
   $('#bkFile').onclick=async()=>{const ok=await saveBackupFile();if(ok)toast('备份文件已生成，选「存储到文件」或发到微信')};
@@ -2782,7 +2783,7 @@ function bindBackup(){
     let o;try{o=await readBackup(raw)}catch(e){toast(e.msg||'备份码不对');return st(e.msg||'备份码不对',true)}
     if(!ld.dataset.armed){ld.dataset.armed='1';ld.textContent='确定恢复（会覆盖现在的记录）';ld.classList.add('coral');
       return st(`备份码没问题：里面有 ${Object.keys(o.srs||{}).length} 个学过的词、${o.food||0} 个苹果、宠物「${(o.pet&&o.pet.name)||''}」。再点一次按钮就恢复`)}
-    const cf=applyCfg(o);S=Object.assign(fresh(),o);S.pet=Object.assign({sp:'leaf'},S.pet);S.stepsV=S.stepsV||2;save();bubbleText='';talk=null;hud();toast(cf?'进度和 AI / 语音识别设置都恢复好了！':'进度已恢复！');go('today');if(cf)setTimeout(()=>location.reload(),1500)};
+    const cf=applyCfg(o);S=Object.assign(fresh(),o);S.pet=Object.assign({sp:'leaf'},S.pet);S.stepsV=S.stepsV||2;save();bubbleText='';talk=null;hud();toast(cf?'进度和 AI / 语音识别 / GitHub 令牌都恢复好了！':'进度已恢复！');go('today');if(cf)setTimeout(()=>location.reload(),1500)};
 }
 const DUP='dupmaster',DUP_NAME='重复导入（已掌握）';
 function splitMastered(words){const fresh=[],dup=[];for(const w of words)(isMastered(w.en)?dup:fresh).push(w);
@@ -3006,7 +3007,7 @@ function renderDecks(){
     <p class="hint" style="margin:0">学习记录、苹果、宠物、徽章、导入的词库都存在这台 iPad 的浏览器里。建议打开下面的 GitHub 云端备份（自动），再时不时存一份备份文件到 iCloud。</p>
     <div class="secl" style="margin:0">💾 备份文件</div>
     <div class="row"><button class="btn go" id="bkFile" type="button">💾 保存备份文件</button><button class="btn" id="bkOpen" type="button">📂 从文件恢复</button><button class="btn" id="bkClip" type="button">📋 粘贴恢复</button><input type="file" id="bkOpenFile" hidden></div>
-    <p class="hint" style="margin:0">点「保存备份文件」后，在弹出的菜单里选「存储到文件」→ iCloud 云盘，或者发给微信「文件传输助手」。恢复时点「从文件恢复」选这个文件。<br>备份里也带着 AI 和语音识别的设置（含 Key），换新设备恢复后不用重新填；GitHub 令牌不在备份里，需要时在下面填一次。<b>备份文件不要发给别人。</b></p>
+    <p class="hint" style="margin:0">点「保存备份文件」后，在弹出的菜单里选「存储到文件」→ iCloud 云盘，或者发给微信「文件传输助手」。恢复时点「从文件恢复」选这个文件。<br>备份里也带着 AI、语音识别的设置和 GitHub 令牌，换新设备恢复后不用重新填；只有「这台 iPad 的备份名字」要在新设备上自己填。<b>备份文件不要发给别人。</b></p>
     <details class="help"><summary>备份在微信里，怎么恢复？</summary>微信里的文件「从文件恢复」选不到，用下面任一种：<br><b>方法一（最简单）：</b>在微信里点开备份文件 → 长按文字 → 全选 → 复制，回到这里点「📋 粘贴恢复」。<br><b>方法二：</b>在微信里点开备份文件 → 右上角「···」→「用其他应用打开」→「存储到文件」，存好后再点「📂 从文件恢复」去选。</details>
     <div class="secl" style="margin:8px 0 0">☁️ GitHub 云端备份（自动）</div>
     ${(()=>{const c=ghCfg();return `<div><label class="lb" for="ghTok">GitHub 令牌（只勾选 gist 权限）</label><input type="password" id="ghTok" value="${esc(c.token||'')}" autocomplete="off" placeholder="ghp_ 开头的一串字符"></div>
