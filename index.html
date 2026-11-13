@@ -519,7 +519,7 @@ const LVTXT={kid:{who:'中国小学生（6-10 岁）',words:'只用小学低年�
   mid:{who:'中国初中生（12-15 岁）',words:'用初中常见词汇，可以有简单的从句',len:'8-14 个词',story:'80-120 个词'},
   high:{who:'中国高中生（15-18 岁）',words:'用高中常见词汇，句式可以丰富一些（从句、非谓语等）',len:'10-18 个词',story:'100-150 个词'}};
 const lvt=()=>LVTXT[studyLv()];
-const APP_VER='2026.11.13f';
+const APP_VER='2026.11.13g';
 const A_MAX=10,B_MAX=5;
 const WEAK_MAX=10; // 巩固（出过错的词）每天最多练 10 个
 const weakCount=()=>{const m=wordMap();return Object.entries(S.srs).filter(([id,r])=>r.weak&&!r.mastered&&!r.moved&&m.has(id)).length};
@@ -1904,7 +1904,7 @@ function renderToday(){
       ${d.mastered&&d.mastered.length?`<div><div class="secl">新掌握的单词</div>${chips(d.mastered,'rev')}</div>`:''}
       <p class="hint">明天要复习 ${dueOn(addDays(today(),1))} 个旧单词，再学 ${newQuota()} 个新词。${weakCount()?`巩固中的词有 ${weakCount()} 个，每天练最多 ${WEAK_MAX} 个，直到全对。`:''}</p>
       <div class="row center"><button class="btn go" data-go="pet">去喂${esc(S.pet.name)}</button>${learnedList().length+masteredList().length>=4?'<button class="btn" id="readQuiz">📖 阅读小测验</button>':''}${nextNew(1).length?'<button class="btn sun" id="extra">🍱 再学一组新词（加餐）</button>':''}</div></div></div>`;
-    const rq=$('#readQuiz');if(rq)rq.onclick=()=>{const pool=learnedList().slice(0,10).map(x=>x.it);const items=pool.length>=4?pool:pool.concat(masteredList().slice(0,10-pool.length).map(x=>x.it));runReading(items)};
+    const rq=$('#readQuiz');if(rq)rq.onclick=()=>runReading(rdPick());
     const ex=$('#extra');if(ex)ex.onclick=()=>{S.day={date:today(),newIds:nextNew(S.newPerDay),revIds:[],aIds:[],bIds:[],curveIds:[],step:0,missed:{},started:false,done:false,extra:true,patRev:[],patNew:[]};save();renderToday()};
     return;
   }
@@ -2846,19 +2846,23 @@ function wbBind(){
 
 /* ---------- 阅读理解页签：挑词 → 生成短文和阅读题 ---------- */
 let rdTab='learn',rdQ='';
+/* 阅读理解做对过的词记在 S.readOK，选词时默认不勾、排到后面，优先勾还没读过的词 */
+const rdDone=id=>!!(S.readOK&&S.readOK[id]);
+const rdFresh=list=>list.filter(x=>!rdDone(x.it.id));
+const rdPick=()=>{const f=rdFresh(learnedList()),fm=rdFresh(masteredList());const pool=f.concat(fm).slice(0,10);return pool.length>=4?pool.map(x=>x.it):pool.concat(learnedList().filter(x=>rdDone(x.it.id))).slice(0,10).map(x=>x.it)};
 function rdListHTML(){const q=rdQ.trim().toLowerCase();const all=rdTab==='learn'?learnedList():masteredList();
-  const list=all.filter(x=>!q||x.it.en.toLowerCase().includes(q)||x.it.zh.includes(q));
+  const list=all.filter(x=>!q||x.it.en.toLowerCase().includes(q)||x.it.zh.includes(q)).sort((a,b)=>rdDone(a.it.id)-rdDone(b.it.id));
   if(!all.length)return `<div class="empty">${rdTab==='learn'?'还没有学过的词，先去完成今日任务吧。':'还没有已掌握的词。'}</div>`;
   if(!list.length)return '<div class="empty">没有找到这个词</div>';
   return `<div class="items">${list.slice(0,200).map(({it})=>`<label class="item" style="cursor:pointer"><input type="checkbox" class="wbck" data-rdsel="${esc(it.id)}" ${wbSel.has(it.id)?'checked':''}>
-    <div class="t"><b>${esc(it.en)}</b><span>${esc(it.zh)}</span></div></label>`).join('')}</div>`}
+    <div class="t"><b>${esc(it.en)}</b><span>${esc(it.zh)}</span></div>${rdDone(it.id)?'<span class="chip" style="opacity:.7">✓ 读过</span>':''}</label>`).join('')}</div>`}
 function renderRead(){
-  if(!wbSel)wbSel=new Set(learnedList().slice(0,10).map(x=>x.it.id));
+  if(!wbSel)wbSel=new Set(rdPick().map(it=>it.id));
   const L=learnedList().length,M=masteredList().length,hist=(S.readings||[]).slice(-8).reverse();
   $('#view').innerHTML=`<div class="stack">
    <div><h2>📖 阅读理解</h2><p class="sub">用学过的单词编一篇小短文，读完做几道题，看看是不是真的掌握了。</p></div>
    <div class="card stack" style="gap:10px;align-items:stretch">
-    <button class="btn go" id="rdQuick" style="font-size:19px;padding:14px" ${L+M<2?'disabled':''}>✨ 用最近学的 10 个词生成</button>
+    <button class="btn go" id="rdQuick" style="font-size:19px;padding:14px" ${L+M<2?'disabled':''}>✨ 用还没读过的 10 个词生成</button><p class="hint center" style="margin:0">阅读理解做对过的词标「✓ 读过」，不会再自动勾选（还剩 ${rdFresh(learnedList()).length+rdFresh(masteredList()).length} 个没读过）</p>
     <p class="hint center" style="margin:0">${aiReady()?'豆包会编一篇新短文，再出 4 道阅读题':'⚠️ 这台设备还没连豆包 AI，编不了短文。请先在「词库 → AI 设置」里填好'}</p></div>
    <div class="card stack" style="gap:10px">
     <div class="secl" style="margin:0">或者自己挑词（已选 <b id="rdN">${wbSel.size}</b> 个，建议 5–12 个）</div>
@@ -2872,10 +2876,10 @@ function renderRead(){
   $('#rdQ').oninput=e=>{rdQ=e.target.value;$('#rdList').innerHTML=rdListHTML()};
   $('#rdList').addEventListener('change',e=>{const c=e.target.closest('[data-rdsel]');if(!c)return;if(c.checked)wbSel.add(c.dataset.rdsel);else wbSel.delete(c.dataset.rdsel);$('#rdN').textContent=wbSel.size});
   document.querySelectorAll('[data-rdtab]').forEach(b=>b.onclick=()=>{rdTab=b.dataset.rdtab;renderRead()});
-  $('#rdAll').onclick=()=>{const q=rdQ.trim().toLowerCase();(rdTab==='learn'?learnedList():masteredList()).filter(x=>!q||x.it.en.toLowerCase().includes(q)||x.it.zh.includes(q)).forEach(x=>wbSel.add(x.it.id));redraw()};
+  $('#rdAll').onclick=()=>{const q=rdQ.trim().toLowerCase();rdFresh(rdTab==='learn'?learnedList():masteredList()).filter(x=>!q||x.it.en.toLowerCase().includes(q)||x.it.zh.includes(q)).forEach(x=>wbSel.add(x.it.id));redraw()};
   $('#rdNone').onclick=()=>{wbSel.clear();redraw()};
   $('#rdMake').onclick=()=>{const m=wordMap();const items=[...wbSel].map(id=>m.get(id)).filter(Boolean);if(items.length<2)return toast('至少选 2 个词');runReading(items.slice(0,15))};
-  $('#rdQuick').onclick=()=>{const pool=learnedList().slice(0,10).map(x=>x.it);const items=pool.length>=4?pool:pool.concat(masteredList().slice(0,10-pool.length).map(x=>x.it));runReading(items)};
+  $('#rdQuick').onclick=()=>runReading(rdPick());
 }
 /* ---------- 阅读理解：用选中的词编短文 + 出题 ---------- */
 async function makeReading(items,basic){
@@ -2955,6 +2959,9 @@ async function runReading(items,basic){
   drawQ();await done;if(!alive(ctx))return;
   /* 结果 */
   const weakW=[...new Set(wrong.map(q=>q.word.toLowerCase()).filter(Boolean))].map(w=>items.find(i=>i.en.toLowerCase()===w)).filter(Boolean);
+  /* 做对了（全对，或 4 题错 1 题以内）：这些词记为读过，下次自动勾别的词；答错题考到的词不算 */
+  if(right>=Math.ceil(n*0.75)){S.readOK=S.readOK||{};const bad=new Set(weakW.map(i=>i.id));items.forEach(i=>{if(!bad.has(i.id))S.readOK[i.id]=today()});
+    if(wbSel){items.forEach(i=>{if(!bad.has(i.id))wbSel.delete(i.id)});if(wbSel.size<2)wbSel=new Set(rdPick().map(it=>it.id))}}
   S.readings=(S.readings||[]).concat({date:today(),words:keys,score:right,total:n}).slice(-50);S.food+=right>=n?3:1;save();hud();beep('win');$('#progBar').style.width='100%';
   $('#gbody').innerHTML=`<div class="card result stack"><div class="ptitle">${right===n?'🎉 全对！这些词掌握得很好':right>=n/2?`答对 ${right}/${n} 题，不错！`:`答对 ${right}/${n} 题，还要加油`}</div>
     <div class="big">${'⭐'.repeat(right)}${'☆'.repeat(n-right)}</div><p>奖励 ${right>=n?3:1} 个苹果 🍎</p>
