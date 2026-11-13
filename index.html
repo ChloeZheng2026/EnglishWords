@@ -519,6 +519,7 @@ const LVTXT={kid:{who:'中国小学生（6-10 岁）',words:'只用小学低年�
   mid:{who:'中国初中生（12-15 岁）',words:'用初中常见词汇，可以有简单的从句',len:'8-14 个词',story:'80-120 个词'},
   high:{who:'中国高中生（15-18 岁）',words:'用高中常见词汇，句式可以丰富一些（从句、非谓语等）',len:'10-18 个词',story:'100-150 个词'}};
 const lvt=()=>LVTXT[studyLv()];
+const APP_VER='2026.11.13';
 const WEAK_MAX=10; // 「不会的词」（巩固中 + 今天的新词）最多 10 个
 const weakCount=()=>{const m=wordMap();return Object.entries(S.srs).filter(([id,r])=>r.weak&&!r.mastered&&!r.moved&&m.has(id)).length};
 const newQuota=()=>Math.max(0,Math.min(S.newPerDay,WEAK_MAX-weakCount()));
@@ -1907,7 +1908,9 @@ function renderToday(){
   if(!items.length){
     $('#view').innerHTML=`<div class="card result stack"><div class="ptitle">今天没有要学的单词</div>
       <p>所有词库里的单词都学过了，也没有要复习的旧单词。</p>
-      <div class="row center"><button class="btn go" data-go="decks">去导入新单词或换词库</button></div></div>`;return;
+      <div class="row center"><button class="btn go" data-go="decks">去导入新单词或换词库</button><button class="btn" id="reDay">🔄 重新安排今天</button></div>
+      <p class="hint">版本 ${APP_VER} · 没学的词 ${nextNew(999).length} 个 · 巩固中 ${weakCount()} 个</p></div>`;
+    $('#reDay').onclick=()=>{buildDay(true);renderToday()};return;
   }
   const revs=d.revIds.map(id=>m.get(id)).filter(Boolean),news=d.newIds.map(id=>m.get(id)).filter(Boolean);
   $('#view').innerHTML=`<div class="stack">
@@ -2846,7 +2849,7 @@ function renderRead(){
    <div><h2>📖 阅读理解</h2><p class="sub">用学过的单词编一篇小短文，读完做几道题，看看是不是真的掌握了。</p></div>
    <div class="card stack" style="gap:10px;align-items:stretch">
     <button class="btn go" id="rdQuick" style="font-size:19px;padding:14px" ${L+M<2?'disabled':''}>✨ 用最近学的 10 个词生成</button>
-    <p class="hint center" style="margin:0">${aiReady()?'豆包会编一篇新短文，再出 4 道阅读题':'没接 AI 时，用这些词的例句组成短文，题目考词义'}</p></div>
+    <p class="hint center" style="margin:0">${aiReady()?'豆包会编一篇新短文，再出 4 道阅读题':'⚠️ 这台设备还没连豆包 AI，编不了短文。请先在「词库 → AI 设置」里填好'}</p></div>
    <div class="card stack" style="gap:10px">
     <div class="secl" style="margin:0">或者自己挑词（已选 <b id="rdN">${wbSel.size}</b> 个，建议 5–12 个）</div>
     <div class="scats" style="padding-bottom:2px"><button class="scat ${rdTab==='learn'?'on':''}" data-rdtab="learn">学过的词<small>${L}</small></button><button class="scat ${rdTab==='master'?'on':''}" data-rdtab="master">已掌握<small>${M}</small></button></div>
@@ -2865,27 +2868,34 @@ function renderRead(){
   $('#rdQuick').onclick=()=>{const pool=learnedList().slice(0,10).map(x=>x.it);const items=pool.length>=4?pool:pool.concat(masteredList().slice(0,10-pool.length).map(x=>x.it));runReading(items)};
 }
 /* ---------- 阅读理解：用选中的词编短文 + 出题 ---------- */
-async function makeReading(items){
-  if(aiReady()){try{
+async function makeReading(items,basic){
+  if(!basic&&!aiReady())return {noai:true};
+  if(!basic)for(let tryN=0;tryN<2;tryN++){try{
     const r=await aiJSON(`请用下面这些英语单词，为${lvt().who}写一篇连贯、有趣的小短文（${lvt().story}，${lvt().words}），每个单词至少出现一次（可以用复数、过去式等简单变形）。
 再出 4 道阅读理解选择题：题目和选项用简单英文；考对短文内容和这些单词意思的理解（至少 2 道题直接考某个单词在文中的意思）；每题 3 个选项，只有一个正确，答案要能从短文里找到。
 单词：${items.map(i=>i.en+'（'+i.zh+'）').join('、')}
 只回复 JSON：{"title":"英文标题","story":"英文短文","storyZh":"短文中文翻译","questions":[{"q":"英文题目","qZh":"题目的中文","options":["选项1","选项2","选项3"],"answer":0,"why":"一句中文解释","word":"这题主要考的单词，没有就留空"}]}`,60000);
     const qs=(r&&Array.isArray(r.questions)?r.questions:[]).filter(x=>x&&x.q&&Array.isArray(x.options)&&x.options.length>=2&&+x.answer>=0&&+x.answer<x.options.length);
     if(r&&r.story&&qs.length)return {title:String(r.title||'Reading'),story:String(r.story),storyZh:String(r.storyZh||''),qs:qs.map(x=>({q:String(x.q),qZh:String(x.qZh||''),options:x.options.map(String),answer:+x.answer,why:String(x.why||''),word:String(x.word||'')})),ai:true}
-  }catch(e){toast('AI 暂时没编出来，先用例句组成短文')}}
-  /* 没有 AI：用例句拼成短文，题目考词义 */
-  const withEx=items.filter(hasEx);const story=(withEx.length?withEx:items).map(i=>i.ex||(i.en+'.')).join(' ');
+    if(tryN)return {fail:'AI 编的短文格式不对'}}catch(e){if(tryN||(e&&AI_OFF.includes(e.code)))return {fail:aiErrMsg(e)}}}
+  /* 例句小练习（没有 AI 时）：把例句列出来，题目考词义。这不是短文，标题写清楚 */
+  const withEx=items.filter(hasEx);const story=(withEx.length?withEx:items).map((i,k)=>(k+1)+'. '+(i.ex||(i.en+'.'))).join('\n');
   const qs=shuffle(items).slice(0,5).map(it=>{const opts=shuffle([it.zh].concat(shuffle(allItems().filter(x=>x.zh!==it.zh)).slice(0,2).map(x=>x.zh)));
     return {q:`In the story, what does "${it.en}" mean?`,qZh:`短文里的 ${it.en} 是什么意思？`,options:opts,answer:opts.indexOf(it.zh),why:`${it.en} = ${it.zh}`,word:it.en}});
-  return {title:'Word Story',story,storyZh:withEx.map(i=>i.exZh).join(''),qs,ai:false}}
-async function runReading(items){
+  return {title:'例句小练习',basic:true,story,storyZh:withEx.map(i=>i.exZh).join(''),qs,ai:false}}
+async function runReading(items,basic){
   const ctx={tok:++RUN,mode:'free',items,pool:items,ok:0,step:{ico:'📖',name:'阅读理解'}};
   tab='read';document.querySelectorAll('.tab').forEach(b=>b.dataset.tab==='read'?b.setAttribute('aria-current','page'):b.removeAttribute('aria-current'));
   flowShell(ctx);window.scrollTo(0,0);const back=$('.ghead [data-go]');if(back){back.dataset.go='read';back.textContent='← 返回'}
   $('#fTitle').textContent='📖 阅读理解';$('#fRound').textContent=`${items.length} 个词`;
   $('#gbody').innerHTML=`<div class="card result stack"><div class="ptitle">${esc(S.pet.name)}正在编短文…</div><p>用这 ${items.length} 个词：${items.map(i=>esc(i.en)).join('、')}</p></div>`;
-  const R=await makeReading(items);if(!alive(ctx))return;
+  const R=await makeReading(items,basic);if(!alive(ctx))return;
+  if(R.noai||R.fail){
+    $('#gbody').innerHTML=`<div class="card result stack"><div class="ptitle">${R.noai?'这台设备还没连上豆包 AI':'短文没编出来'}</div>
+      <p>${R.noai?'阅读短文要靠豆包 AI 来编。AI 设置是每台设备分开存的，这台 iPhone / iPad 需要在「词库 → AI 设置（豆包）」里填一次接口地址和 Key。':esc(R.fail)+'，可以再试一次。'}</p>
+      <div class="row center">${R.fail?'<button class="btn go" id="rdRetry">🔄 再试一次</button>':'<button class="btn go" data-go="decks">去 AI 设置</button>'}<button class="btn" id="rdBasic">先做例句小练习</button></div>
+      <p class="hint">例句小练习：把这些词的例句列出来，做几道词义题，不是一篇连贯的短文。</p></div>`;
+    const rr=$('#rdRetry');if(rr)rr.onclick=()=>runReading(items);$('#rdBasic').onclick=()=>runReading(items,true);return}
   const keys=items.map(i=>i.en);
   const keyset=keys.map(k=>k.toLowerCase().split(' ')[0]);
   const isKey=x=>{const l=x.toLowerCase();return keyset.some(k=>l===k||l===k+'s'||l===k+'es'||l===k+'ed'||l===k+'d'||l===k+'ing'||(k.endsWith('e')&&l===k.slice(0,-1)+'ing')||(k.endsWith('y')&&(l===k.slice(0,-1)+'ies'||l===k.slice(0,-1)+'ied')))};
@@ -2893,7 +2903,7 @@ async function runReading(items){
   /* 第 1 步：读短文 */
   await new Promise(res=>{
     $('#gbody').innerHTML=`<div class="card stack" style="gap:10px"><div class="ptitle center">${esc(R.title)}</div>
-      <div class="passage" id="rdStory" style="font-size:20px;line-height:1.9">${mark(R.story)}</div>
+      <div class="passage" id="rdStory" style="font-size:20px;line-height:1.9;${R.basic?'white-space:pre-line':''}">${mark(R.story)}</div>
       ${R.storyZh?`<div class="hint" id="rdZh" hidden style="font-size:16px;line-height:1.8">${esc(R.storyZh)}</div>`:''}
       <div class="row center"><button class="btn" id="rdSay">🔊 听短文</button>${R.storyZh?'<button class="btn" id="rdZhBtn">看中文</button>':''}</div>
       <p class="hint center" style="margin:0">先大声读一遍短文。不认识的词点一下，会显示中文并加入生词本。</p>
@@ -2931,7 +2941,7 @@ function renderDecks(){
   const mastered=Object.entries(S.srs).filter(([id,r])=>r.mastered&&m.has(id));
   const d=deck(),dNoEx=d.items.filter(i=>!hasEx(i));
   $('#view').innerHTML=`<div class="stack">
-   <div><h2>我的词库</h2><p class="sub">每天的新单词：先从「使用中」的词库按顺序取（每天会插入最多 2 个生词本里的词），这个词库学完了自动接着学其他词库。点 ✏️ 可以改词库名字；打开词库，点「⤒先学」或 ↑↓ 可以调整学习顺序。</p>
+   <div><h2>我的词库</h2><p class="sub">每天的新单词：先从「使用中」的词库按顺序取（每天会插入最多 2 个生词本里的词），这个词库学完了自动接着学其他词库。点 ✏️ 可以改词库名字；打开词库，点「⤒先学」或 ↑↓ 可以调整学习顺序。<br><span class="hint">程序版本：${APP_VER}</span></p>
     <div class="stack" style="gap:10px">${S.decks.map(dk=>{const learned=dk.items.filter(i=>S.srs[i.id]).length;return `
      <div class="deck ${dk.id===S.active?'on':''}"><div class="nm">${renaming===dk.id?`<div class="row" style="gap:6px;flex-wrap:nowrap"><input type="text" id="renIn" value="${esc(dk.name)}" maxlength="20" style="padding:6px 10px"><button class="btn small go" data-rensave="${dk.id}">保存</button></div>`:`${esc(dk.name)} <button class="linkbtn" data-ren="${dk.id}" style="margin:0;text-decoration:none" aria-label="改名">✏️</button>`}<small>${dk.items.length} 个单词 · 学过 ${learned} 个 · ${dk.items.filter(hasEx).length} 个有例句</small></div>
       ${dk.id===S.active?'<span class="chip">使用中</span>':`<button class="btn small go" data-use="${dk.id}">使用</button>`}
